@@ -8,6 +8,7 @@ const SessionControl = ({
   setIsSessionActive,
   sessionStartTime,
   setSessionStartTime,
+  onStartSession,
   onEndSession,
   alerts
 }) => {
@@ -37,10 +38,14 @@ const SessionControl = ({
   };
 
   const handleStartSession = () => {
-    setSessionStartTime(Date.now());
-    setIsSessionActive(true);
-    setIsPaused(false);
-    setPausedTime(0);
+    if (onStartSession) {
+      onStartSession();
+    } else {
+      setSessionStartTime(Date.now());
+      setIsSessionActive(true);
+      setIsPaused(false);
+      setPausedTime(0);
+    }
   };
 
   const handlePauseResume = () => {

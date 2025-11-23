@@ -87,11 +87,13 @@ function App() {
   };
 
   const handleSaveReportToSession = (sessionId, report) => {
+    console.log('[App] Saving report for session:', sessionId);
     const updatedSessions = completedSessions.map(session => 
       session.id === sessionId ? { ...session, report: report } : session
     );
     setCompletedSessions(updatedSessions);
     localStorage.setItem('droneGuardSessions', JSON.stringify(updatedSessions));
+    console.log('[App] Report saved. Updated sessions:', updatedSessions.length);
   };
 
   const handleDeleteSession = (sessionId) => {

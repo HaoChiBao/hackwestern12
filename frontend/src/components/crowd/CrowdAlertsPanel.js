@@ -157,30 +157,32 @@ const CrowdAlertsPanel = ({ alerts, onAlertClick, onResolveAlert }) => {
                       flexDirection: 'column',
                       gap: '0.5rem'
                     }}>
-                      {/* Simulated Screenshot */}
+                      {/* Snapshot Image */}
                       <div style={{
                         width: '100%',
-                        height: '100px',
+                        height: '120px',
                         backgroundColor: '#171717',
                         borderRadius: '2px',
                         position: 'relative',
                         overflow: 'hidden',
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'center'
+                        justifyContent: 'center',
+                        border: '1px solid var(--border-color)'
                       }}>
-                        {/* Simulated Thermal Heatmap */}
-                        <div style={{
-                          position: 'absolute',
-                          top: '50%', left: '50%',
-                          transform: 'translate(-50%, -50%)',
-                          width: '120%', height: '120%',
-                          background: `radial-gradient(circle, ${alert.snapshotColor} 0%, transparent 70%)`,
-                          opacity: 0.6,
-                          filter: 'blur(10px)'
-                        }}></div>
-                        <Camera size={16} color="rgba(255,255,255,0.3)" />
-                        <span style={{ position: 'absolute', bottom: '4px', right: '4px', fontSize: '0.6rem', color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace' }}>REC: {alert.zoneName}</span>
+                        {alert.snapshot ? (
+                          <img 
+                            src={alert.snapshot} 
+                            alt="Alert Snapshot" 
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          />
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                            <Camera size={20} color="rgba(255,255,255,0.3)" />
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>No Snapshot Available</span>
+                          </div>
+                        )}
+                        <span style={{ position: 'absolute', bottom: '4px', right: '4px', fontSize: '0.6rem', color: 'rgba(255,255,255,0.8)', fontFamily: 'monospace', textShadow: '0 1px 2px black' }}>REC: {alert.zoneName}</span>
                       </div>
 
                       {/* Action Buttons */}
