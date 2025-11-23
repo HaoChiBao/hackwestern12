@@ -113,6 +113,7 @@ const CrowdZoneCards = ({ zones, onRename, onRemove }) => {
 
   return (
     <div style={{ 
+      width: '100%',
       display: 'flex', 
       gap: '1rem', 
       overflowX: 'auto', 

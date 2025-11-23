@@ -84,7 +84,7 @@ const DroneSessionsPage = ({ sessions = [], onViewSession, onDeleteSession }) =>
               alignItems: 'center',
               transition: 'background-color 0.2s'
             }}
-            onClick={() => onViewSession && onViewSession(session.id)}
+            onClick={() => onViewSession && onViewSession(session)}
             onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)')}
             onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
           >
