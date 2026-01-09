@@ -1,5 +1,6 @@
 import React from 'react';
 import { LayoutDashboard, Video, BarChart2, Settings, Bell, Sun, Moon, Shield, FileText, Database } from 'lucide-react';
+import logo from './logo/Notext.png';
 
 const SidebarItem = ({ icon: Icon, label, active, onClick }) => (
   <div 
@@ -34,21 +35,22 @@ const Layout = ({ children, isDarkMode, toggleTheme, currentPage, onNavigate }) 
         borderRight: '1px solid var(--border-color)',
         display: 'flex',
         flexDirection: 'column',
-        padding: '0.75rem'
       }}>
         <div style={{ 
           display: 'flex', 
           alignItems: 'center', 
           gap: '0.75rem', 
-          marginBottom: '1.5rem', 
-          padding: '0.5rem',
+          padding: '0 1.5rem',
+          height: 'var(--header-height)',
           borderBottom: '1px solid var(--border-color)'
         }}>
-          <Shield size={20} />
-          <h1 style={{ fontSize: '0.9rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Crowd Watch</h1>
+          <img src={logo} alt="Aerotir Logo" style={{ height: '24px' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <h1 style={{ fontSize: '1.2rem', fontWeight: 400, letterSpacing: '0.02em' }}>Aerotir</h1>
+          </div>
         </div>
 
-        <nav style={{ flex: 1 }}>
+        <nav style={{ flex: 1, padding: '1rem' }}>
           <div style={{ marginBottom: '1rem' }}>
             <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '0.5rem', paddingLeft: '0.5rem', textTransform: 'uppercase' }}>Main</p>
             <SidebarItem icon={LayoutDashboard} label="Overview" active={currentPage === 'overview'} onClick={() => onNavigate('overview')} />
@@ -63,7 +65,7 @@ const Layout = ({ children, isDarkMode, toggleTheme, currentPage, onNavigate }) 
           </div>
         </nav>
 
-        <div style={{ marginTop: 'auto', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
+        <div style={{ marginTop: 'auto', borderTop: '1px solid var(--border-color)', padding: '1rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
             <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: 'var(--success)' }}></div>
             <span>SYSTEM ONLINE</span>
@@ -85,7 +87,7 @@ const Layout = ({ children, isDarkMode, toggleTheme, currentPage, onNavigate }) 
           padding: '0 1.5rem'
         }}>
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-            <h2 style={{ fontSize: '0.9rem', fontWeight: 600, textTransform: 'uppercase' }}>Dashboard / {currentPage === 'overview' ? 'Overview' : currentPage === 'reports' ? 'Reports' : currentPage === 'sessions' ? 'Drone Sessions' : 'Overview'}</h2>
+            <h2 style={{ fontSize: '0.9rem', fontWeight: 600, textTransform: 'uppercase' }}>Heimdall : Dashboard</h2>
           </div>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
