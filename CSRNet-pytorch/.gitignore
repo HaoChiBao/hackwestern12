@@ -108,3 +108,6 @@ checkpoints/
 data/
 runs/
 .vscode/
+
+*.mp4
+*.pth
