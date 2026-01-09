@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Live Crowd Density (WebSocket)</title>
+    <style>
+      body {
+        background: #050505;
+        color: #f5f5f5;
+        font-family: Arial, sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding-top: 20px;
+      }
+      h1 {
+        margin-bottom: 10px;
+      }
+      #video-container {
+        border: 2px solid #fff;
+        border-radius: 8px;
+        overflow: hidden;
+        max-width: 90vw;
+        min-height: 200px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #222;
+      }
+      #stream {
+        display: block;
+        max-width: 100%;
+        height: auto;
+      }
+      .stats {
+        margin-top: 10px;
+        font-size: 0.9rem;
+        opacity: 0.85;
+      }
+      #status {
+        margin-top: 8px;
+        font-size: 0.9rem;
+        opacity: 0.8;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Live Crowd Density (CSRNet over WebSocket)</h1>
+
+    <div id="video-container">
+      <img id="stream" src="" alt="Waiting for stream..." />
+    </div>
+
+    <div id="status">Status: connecting…</div>
+
+    <div class="stats">
+      <span id="count">Estimated count: --</span> |
+      <span id="fps">FPS: --</span>
+    </div>
+
+    <!-- Socket.IO client (v3.x is safest with Flask-SocketIO) -->
+    <!-- <script
+      src="https://cdn.socket.io/3.1.3/socket.io.min.js"
+      integrity="sha384-Wu8TC6aHJS5GPLtfRVK9akayVbCDvyL+q4nCq+ui4aO7PJqG87uJ28Ank5wZr3XM"
+      crossorigin="anonymous"
+    ></script> -->
+    <!-- Use the Socket.IO client served by Flask-SocketIO -->
+    <!-- Socket.IO client from CDN (no integrity, so it won't be blocked) -->
+    <script src="https://cdn.socket.io/3.1.3/socket.io.min.js"></script>
+
+    <script>
+      const imgEl = document.getElementById("stream");
+      const countEl = document.getElementById("count");
+      const fpsEl = document.getElementById("fps");
+      const statusEl = document.getElementById("status");
+
+      // connect to same origin
+      const socket = io({
+        transports: ["websocket"], // force websocket to reduce weirdness
+      });
+
+      socket.on("connect", () => {
+        console.log("WS connected");
+        statusEl.textContent = "Status: connected ✅";
+      });
+
+      socket.on("connect_error", (err) => {
+        console.error("WS connect error", err);
+        statusEl.textContent = "Status: connection error (see console)";
+      });
+
+      socket.on("frame", (data) => {
+        if (data.image) {
+          imgEl.src = "data:image/jpeg;base64," + data.image;
+        }
+        if (typeof data.count === "number") {
+          countEl.textContent = "Estimated count: " + data.count.toFixed(1);
+        }
+        if (typeof data.fps === "number") {
+          fpsEl.textContent = "FPS: " + data.fps.toFixed(2);
+        }
+      });
+
+      socket.on("disconnect", () => {
+        console.log("WS disconnected");
+        statusEl.textContent = "Status: disconnected";
+      });
+    </script>
+  </body>
+</html>

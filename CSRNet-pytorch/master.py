@@ -1,0 +1,535 @@
+import cv2
+import numpy as np
+import torch
+import base64
+import time
+import threading
+import eventlet
+import os
+from torchvision import transforms
+from flask import Flask, render_template_string, Response, request, jsonify
+from flask_socketio import SocketIO, emit
+from werkzeug.utils import secure_filename
+
+# Patch for better async performance with Flask-SocketIO
+eventlet.monkey_patch()
+
+from model import CSRNet
+
+# ----------------------
+# Configuration
+# ----------------------
+RTMP_URL = "rtmp://172.20.10.2:1935/live/dji"  # Drone stream
+UPLOAD_FOLDER = 'uploads'
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# ----------------------
+# Device + Model Setup
+# ----------------------
+def load_model():
+    """Load CSRNet model with comprehensive error handling."""
+    if torch.backends.mps.is_available():
+        device = torch.device("mps")
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+    
+    print(f"Using device: {device}")
+    
+    model = None
+    try:
+        model = CSRNet().to(device)
+        state = torch.load("csrnet_pretrained.pth", map_location=device)
+        model.load_state_dict(state)
+        model.eval()
+        print("✓ Loaded pretrained CSRNet weights successfully")
+    except FileNotFoundError:
+        print("⚠ Warning: csrnet_pretrained.pth not found. Model will not generate heatmaps.")
+        print("  System will continue in fallback mode.")
+        model = None
+    except Exception as e:
+        print(f"⚠ Warning: Error loading model weights: {e}")
+        print("  System will continue in fallback mode.")
+        model = None
+    
+    return model, device
+
+model, device = load_model()
+
+# ImageNet-style preprocessing
+transform = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+])
+
+# ----------------------
+# Flask + SocketIO
+# ----------------------
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'secret!'
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+
+@app.after_request
+def after_request(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
+    response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
+    return response
+
+# Global state
+current_source_type = 'drone' # 'drone', 'upload', 'webcam'
+current_video_source = RTMP_URL
+streaming_active = False
+thread = None
+thread_lock = threading.Lock()
+
+# MJPEG State
+outputFrame = None
+frame_lock = threading.Lock()
+
+# Smoothing for population count
+smoothed_count = None
+SMOOTHING_ALPHA = 0.3  # Lower = more smoothing, higher = more responsive
+
+def generate_heatmap_data(frame):
+    """
+    Run CSRNet, get density map, and downsample for frontend grid.
+    """
+    global model, device
+    
+    # Fallback if model not loaded
+    if model is None:
+        print("⚠ Model not available, returning dummy heatmap")
+        grid_w, grid_h = 60, 40
+        dummy_grid = [0.0] * (grid_w * grid_h)
+        stats = {
+            "totalPeople": 0,
+            "globalDensity": 0.0,
+            "globalRiskLevel": "low",
+            "maxDensity": 0.0
+        }
+        return dummy_grid, stats
+    
+    try:
+        # Resize for inference speed
+        target_w, target_h = 640, 360
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        rgb_resized = cv2.resize(rgb, (target_w, target_h))
+        
+        img_tensor = transform(rgb_resized).unsqueeze(0).to(device)
+        
+        with torch.no_grad():
+            density = model(img_tensor)
+        
+        density_map = density.squeeze().cpu().numpy()
+        density_map = np.maximum(density_map, 0)
+        
+        # Scale down total count (CSRNet overestimates by ~100x)
+        total_count_raw = np.sum(density_map)
+        total_count_scaled = total_count_raw / 100.0
+        
+        # Apply exponential moving average for smoothing
+        global smoothed_count
+        if smoothed_count is None:
+            smoothed_count = total_count_scaled
+        else:
+            smoothed_count = (SMOOTHING_ALPHA * total_count_scaled) + ((1 - SMOOTHING_ALPHA) * smoothed_count)
+        
+        total_count = smoothed_count
+        
+        # Downsample to 60x40 grid for frontend
+        grid_w, grid_h = 60, 40
+        grid_map = cv2.resize(density_map, (grid_w, grid_h), interpolation=cv2.INTER_AREA)
+        
+        # Send raw density values
+        heatmap_grid = grid_map.flatten().tolist()
+
+        # Calculate max_val for stats
+        max_val = np.max(grid_map)
+        
+        # Calculate Risk Level
+        risk_level = "low"
+        if total_count > 500 or max_val > 0.8: 
+            risk_level = "critical"
+        elif total_count > 300 or max_val > 0.5:
+            risk_level = "high"
+        elif total_count > 100:
+            risk_level = "medium"
+            
+        stats = {
+            "totalPeople": int(total_count),
+            "globalDensity": float(min(total_count / 1000.0, 1.0)), 
+            "globalRiskLevel": risk_level,
+            "maxDensity": float(max_val)
+        }
+        
+        return heatmap_grid, stats
+        
+    except Exception as e:
+        print(f"Error in generate_heatmap_data: {e}")
+        # Return safe defaults
+        grid_w, grid_h = 60, 40
+        dummy_grid = [0.0] * (grid_w * grid_h)
+        stats = {
+            "totalPeople": 0,
+            "globalDensity": 0.0,
+            "globalRiskLevel": "low",
+            "maxDensity": 0.0
+        }
+        return dummy_grid, stats
+
+def background_stream():
+    """Background task to stream video and data (Drone/Upload modes)."""
+    global streaming_active, outputFrame, current_video_source, current_source_type
+    print(f"Starting background stream with source: {current_video_source}")
+    
+    cap = cv2.VideoCapture(current_video_source)
+    
+    # Set timeout for video capture (5 seconds)
+    cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)
+    
+    # Retry logic only for RTMP with limited attempts
+    if current_source_type == 'drone':
+        retry_count = 0
+        max_retries = 3  # Limit retries to prevent indefinite blocking
+        
+        while not cap.isOpened() and streaming_active and current_source_type == 'drone' and retry_count < max_retries:
+            retry_count += 1
+            print(f"Warning: Could not open RTMP {RTMP_URL}. Retry {retry_count}/{max_retries} in 2 seconds...")
+            socketio.sleep(2)  # Shorter retry interval
+            cap = cv2.VideoCapture(current_video_source)
+            cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)
+        
+        if not cap.isOpened():
+            print(f"Error: Failed to connect to drone after {max_retries} attempts. Switching to standby mode.")
+            # Don't block - just return and let system continue
+            return
+    
+    if not cap.isOpened() and current_source_type != 'webcam':
+        print(f"Error: Could not open source {current_video_source}")
+        return
+
+    fps = 30
+    if current_source_type == 'drone':
+        fps = 120
+    
+    frame_time = 1.0 / fps
+    HEATMAP_INTERVAL = 3 # Run model every N frames
+    frame_count = 0
+    
+    last_heatmap_grid = None
+    last_stats = None
+    consecutive_errors = 0
+    max_consecutive_errors = 10
+    
+    while streaming_active:
+        # If mode switched to webcam, exit immediately
+        if current_source_type == 'webcam':
+            print("Webcam mode detected - stopping background stream")
+            break
+
+        try:
+            start_time = time.time()
+            success, frame = cap.read()
+            
+            if not success:
+                if current_source_type == 'upload':
+                    # Loop video
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    continue
+                elif current_source_type == 'drone':
+                     print("Video stream ended or failed, restarting...")
+                     cap.release()
+                     time.sleep(1)
+                     cap = cv2.VideoCapture(current_video_source)
+                     continue
+                else:
+                    break
+            
+            # Reset error counter on successful read
+            consecutive_errors = 0
+                
+            # Resize frame for transmission with error handling
+            try:
+                preview_frame = cv2.resize(frame, (640, 360))
+            except (cv2.error, MemoryError, SystemError, Exception) as resize_error:
+                print(f"Error resizing frame: {resize_error}")
+                # Try with smaller resolution
+                try:
+                    preview_frame = cv2.resize(frame, (480, 270))
+                except:
+                    print("Critical: Cannot resize frame at all, skipping")
+                    time.sleep(0.1)
+                    continue
+            
+            frame_count += 1
+            
+            # 1. Process Heatmap with error handling
+            if frame_count % HEATMAP_INTERVAL == 0 or last_heatmap_grid is None:
+                try:
+                    heatmap_grid, stats = generate_heatmap_data(frame)
+                    last_heatmap_grid = heatmap_grid
+                    last_stats = stats
+                    
+                    socketio.emit('heatmap_update', {
+                        'grid': heatmap_grid,
+                        'stats': stats,
+                        'timestamp': time.time() * 1000
+                    })
+                except (MemoryError, SystemError) as mem_error:
+                    print(f"⚠ Memory error in heatmap generation: {mem_error}")
+                    # Skip heatmap for this frame
+                    pass
+                except Exception as e:
+                    print(f"Error in heatmap generation: {e}")
+            
+            # 2. Update MJPEG Frame with error handling
+            try:
+                ret, buffer = cv2.imencode('.jpg', preview_frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                if ret:
+                    with frame_lock:
+                        outputFrame = buffer.tobytes()
+            except (MemoryError, SystemError, Exception) as encode_error:
+                print(f"Error encoding frame: {encode_error}")
+                # Skip this frame
+                pass
+                
+            elapsed = time.time() - start_time
+            delay = max(0, frame_time - elapsed)
+            socketio.sleep(delay)
+            
+        except (MemoryError, SystemError, OSError) as critical_error:
+            consecutive_errors += 1
+            print(f"⚠ Critical error in background_stream ({consecutive_errors}/{max_consecutive_errors}): {critical_error}")
+            
+            if consecutive_errors >= max_consecutive_errors:
+                print("❌ Too many consecutive errors, stopping stream to prevent system crash")
+                break
+            
+            # Wait before retry
+            time.sleep(1)
+            continue
+            
+        except Exception as general_error:
+            consecutive_errors += 1
+            print(f"⚠ General error in background_stream ({consecutive_errors}/{max_consecutive_errors}): {general_error}")
+            
+            if consecutive_errors >= max_consecutive_errors:
+                print("❌ Too many errors, stopping stream")
+                break
+                
+            time.sleep(0.5)
+            continue
+        
+    cap.release()
+    print("Background stream stopped.")
+
+def restart_stream_thread():
+    global thread, streaming_active
+    with thread_lock:
+        # Signal thread to stop
+        streaming_active = False
+        
+        # Wait for thread to actually stop (reduced for faster switching)
+        if thread is not None:
+            socketio.sleep(0.3)  # Reduced from 2 seconds to 300ms
+            thread = None
+        
+        # Start new thread immediately
+        streaming_active = True
+        thread = socketio.start_background_task(background_stream)
+
+# ----------------------
+# Routes & Events
+# ----------------------
+
+@app.route('/upload_video', methods=['POST', 'OPTIONS'])
+def upload_video():
+    if request.method == 'OPTIONS':
+        return '', 204
+    
+    try:
+        global current_source_type, current_video_source
+        
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file part'}), 400
+        
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'No selected file'}), 400
+        
+        # Validate file extension
+        allowed_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv'}
+        file_ext = os.path.splitext(file.filename)[1].lower()
+        if file_ext not in allowed_extensions:
+            return jsonify({'error': f'Unsupported file type: {file_ext}. Allowed: {allowed_extensions}'}), 400
+            
+        if file:
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            
+            # Save file with error handling
+            try:
+                file.save(filepath)
+            except Exception as save_error:
+                print(f"Error saving file: {save_error}")
+                return jsonify({'error': f'Failed to save file: {str(save_error)}'}), 500
+            
+            # Verify file was saved and is readable
+            if not os.path.exists(filepath):
+                return jsonify({'error': 'File was not saved properly'}), 500
+            
+            current_source_type = 'upload'
+            current_video_source = filepath
+            restart_stream_thread()
+            
+            return jsonify({'success': True, 'message': 'Video uploaded and stream started', 'filename': filename})
+    except Exception as e:
+        print(f"Error in upload_video: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/set_source', methods=['POST', 'OPTIONS'])
+def set_source():
+    if request.method == 'OPTIONS':
+        return '', 204
+    
+    try:
+        global current_source_type, current_video_source, streaming_active, thread
+        data = request.json
+        source = data.get('source')
+        
+        if source == 'drone':
+            current_source_type = 'drone'
+            current_video_source = RTMP_URL
+            restart_stream_thread()
+        elif source == 'webcam':
+            current_source_type = 'webcam'
+            # Stop background stream thread completely for webcam mode
+            with thread_lock:
+                streaming_active = False
+                if thread is not None:
+                    socketio.sleep(0.3)
+                    thread = None
+            print("Switched to webcam mode - background stream stopped")
+        else:
+            return jsonify({'error': 'Invalid source type'}), 400
+        
+        return jsonify({'success': True, 'source': current_source_type})
+    except Exception as e:
+        print(f"Error in set_source: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/stop_stream', methods=['POST', 'OPTIONS'])
+def stop_stream():
+    if request.method == 'OPTIONS':
+        return '', 204
+    
+    try:
+        global streaming_active, thread
+        with thread_lock:
+            streaming_active = False
+            socketio.sleep(0.2)  # Wait for thread to stop
+            thread = None
+        
+        return jsonify({'success': True, 'message': 'Stream stopped'})
+    except Exception as e:
+        print(f"Error in stop_stream: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@socketio.on('process_frame')
+def handle_process_frame(data):
+    """Handle individual frames sent from client (Webcam mode)."""
+    if current_source_type != 'webcam':
+        print(f"Ignoring process_frame - current mode is {current_source_type}")
+        return
+
+    try:
+        # Decode base64 frame
+        # data['image'] should be "data:image/jpeg;base64,..."
+        image_data = data.get('image', '')
+        
+        if not image_data:
+            print("No image data received")
+            return
+            
+        # Check if it's a data URL
+        if ',' in image_data:
+            header, encoded = image_data.split(",", 1)
+        else:
+            encoded = image_data
+            
+        nparr = np.frombuffer(base64.b64decode(encoded), np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if frame is None:
+            print("Failed to decode frame")
+            return
+
+        # Generate heatmap
+        heatmap_grid, stats = generate_heatmap_data(frame)
+        
+        # Emit back to all clients
+        socketio.emit('heatmap_update', {
+            'grid': heatmap_grid,
+            'stats': stats,
+            'timestamp': time.time() * 1000
+        })
+        
+        # Also update MJPEG frame for video feed
+        global outputFrame
+        ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+        if ret:
+            with frame_lock:
+                outputFrame = buffer.tobytes()
+        
+    except Exception as e:
+        print(f"Error processing webcam frame: {e}")
+        import traceback
+        traceback.print_exc()
+
+def generate():
+    global outputFrame, current_source_type
+    while True:
+        if current_source_type == 'webcam':
+            time.sleep(1)
+            continue
+            
+        with frame_lock:
+            if outputFrame is None:
+                time.sleep(0.1)
+                continue
+            frame_data = outputFrame
+            
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame_data + b'\r\n')
+        time.sleep(0.03)
+
+@app.route('/video_feed')
+def video_feed():
+    response = Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
+    return response
+
+@socketio.on('connect')
+def handle_connect():
+    global thread, streaming_active
+    print('Client connected')
+    with thread_lock:
+        if thread is None and current_source_type != 'webcam':
+            streaming_active = True
+            thread = socketio.start_background_task(background_stream)
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    print('Client disconnected')
+
+if __name__ == '__main__':
+    print("Starting Flask-SocketIO server on port 5000...")
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
