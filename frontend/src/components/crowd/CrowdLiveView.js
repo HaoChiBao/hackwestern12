@@ -844,7 +844,7 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
                     >
                         <Video size={80} strokeWidth={1.5} />
                         <div style={{ textAlign: 'center' }}>
-                            <p style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '0.5rem' }}>
+                            <p style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '0.5rem', fontFamily: 'var(--font-heading)' }}>
                                 {isDragging ? 'Drop video file here' : 'Upload Video'}
                             </p>
                             <p style={{ fontSize: '0.9rem', opacity: 0.7 }}>
