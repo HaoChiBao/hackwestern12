@@ -94,13 +94,17 @@ function App() {
   return (
     <>
       <header className={`header ${isScrolled ? 'scrolled' : ''}`}>
-        <div className="logo-container">
+        <div 
+          className="logo-container" 
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          style={{ cursor: 'pointer' }}
+        >
           <img src={logo} alt="Aerotir Logo" className="logo-icon" />
           <span>Aerotir</span>
         </div>
         <nav className="nav">
           <a href="#CrowdWatch" className="nav-link">Products</a>
-          <a className="nav-link">Contact</a>
+          <a href="mailto:nathan.wan23@gmail.com" className="nav-link">Contact</a>
           <a 
             href="https://cal.com/james-yang-ukxevk/30min" 
             target="_blank" 
@@ -193,7 +197,7 @@ function App() {
            <div className="footer-links">
              <div className="footer-column">
                <h4>Product</h4>
-               <a href="#">Features</a>
+               <a href="#CrowdWatch">Features</a>
                <a href="#">Security</a>
                <a href="#">Enterprise</a>
              </div>
