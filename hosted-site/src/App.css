@@ -1,0 +1,431 @@
+/* Header */
+/* Header */
+.header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 3rem; /* Reduced padding for shorter height */
+  z-index: 100;
+  background: transparent; /* Transparent initially */
+  transition: all 0.3s ease;
+  color: #fff; /* Default white text for transparent/sky bg */
+}
+
+.header.scrolled {
+  background: #fff; /* White background when scrolled */
+  color: #000;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.logo-container {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  font-size: 1.25rem;
+}
+
+.logo-icon {
+  width: 20px;
+  height: auto;
+  transition: filter 0.3s;
+}
+
+/* Invert logo color on scroll (assuming simple black/white switch) */
+.header.scrolled .logo-icon {
+    filter: invert(1);
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+}
+
+.nav-link {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #fff; /* White initially */
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.header.scrolled .nav-link {
+  color: #000; /* Black when scrolled */
+}
+
+.nav-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.btn-get-started {
+  display: inline-block; /* Added for anchor tag support */
+  text-decoration: none; /* Added for anchor tag support */
+  background-color: #fff;
+  color: #000;
+  padding: 0.6rem 1.4rem; /* Slightly smaller padding */
+  border-radius: 4px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+}
+
+/* Invert button on scroll for better look on white */
+.header.scrolled .btn-get-started {
+    background-color: #000;
+    color: #fff;
+}
+
+.btn-get-started:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.header.scrolled .btn-get-started:hover {
+    background-color: #333;
+}
+
+/* Hero Section */
+.hero {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  background-size: cover;
+  background-position: center;
+  color: #000;
+  padding-top: 60px; /* Offset for header */
+}
+
+.hero::after {
+    /* Optional overlay if text contrast is needed, but design looks clean */
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.hero-content {
+  z-index: 1;
+  max-width: 1200px; /* Increased from 800px to prevent text wrapping */
+  padding: 0 1rem;
+}
+
+.hero h1 {
+  font-size: 3rem;
+  line-height: 1.2;
+  font-weight: 500;
+  margin-bottom: 2rem;
+  color: #111;
+}
+
+.hero p {
+  font-size: 1.1rem;
+  color: #333;
+  max-width: 600px;
+  margin: 0 auto 3rem;
+  line-height: 1.6;
+}
+
+.btn-demo {
+  display: inline-block; /* Added for anchor tag support */
+  text-decoration: none; /* Added for anchor tag support */
+  background: rgba(0, 0, 0, 0.6); /* Darker background for visibility */
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 0.8rem 2rem;
+  font-size: 1rem;
+  color: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  transition: all 0.2s;
+}
+
+/* Using a darker button for visibility if the bg is light clouds */
+.btn-demo.dark-mode {
+    border-color: #333;
+    color: #333;
+}
+
+.btn-demo:hover {
+  background: rgba(0, 0, 0, 0.8);
+  transform: translateY(-1px);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+/* Features / Dashboard */
+.features {
+  padding: 4rem 3rem;
+  max-width: 1400px;
+  margin: 0 auto;
+  scroll-margin-top: 80px; /* Offset for fixed header */
+}
+
+.section-title {
+  font-size: 2.5rem;
+  font-weight: 500;
+  margin-bottom: 1rem;
+}
+
+.section-desc {
+  max-width: 600px;
+  margin-bottom: 3rem;
+  color: #444;
+}
+
+.tabs {
+  display: flex;
+  border-bottom: 1px solid #ddd;
+  margin-bottom: 2rem;
+}
+
+.tab {
+  padding: 1rem 2rem;
+  cursor: pointer;
+  color: #888;
+  position: relative;
+  font-weight: 500;
+  border-bottom: 2px solid transparent; /* Prepare for progress bar */
+}
+
+.tab.active {
+  color: #000;
+  font-weight: 700; /* Bold text to make it look darker/prominent */
+  /* border-bottom handled by progress bar now */
+}
+
+.progress-bar-container {
+  position: absolute;
+  bottom: -1px; /* Align with bottom border line */
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: transparent;
+}
+
+.progress-bar {
+  height: 100%;
+  background: #000;
+  transition: width 0.05s linear; /* Smooth linear transition */
+}
+
+.dashboard-container {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 2rem;
+}
+
+.dashboard-preview {
+  background: #000;
+  min-height: 400px; /* Adjusted height for video aspect ratio */
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.dashboard-preview iframe {
+  width: 100%;
+  height: 100%;
+  min-height: 400px; /* Ensure visibility */
+  border: none;
+}
+
+.feature-card {
+  background: #111;
+  color: #fff;
+  padding: 3rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-radius: 4px;
+  /* Ensure height content doesn't jump too much, or min-height */
+  min-height: 300px;
+}
+
+/* Animation for tab content */
+.fade-in {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.feature-card h3 {
+  font-size: 2rem;
+  margin-bottom: 1.5rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.feature-card p {
+  color: #aaa;
+  line-height: 1.6;
+}
+
+/* Footer */
+.footer {
+  background: #111;
+  color: #fff;
+  padding: 4rem 3rem;
+  min-height: 400px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.footer-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.footer-links {
+  display: flex;
+  gap: 4rem;
+}
+
+.footer-column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.footer-column h4 {
+  font-size: 1rem;
+  margin-bottom: 0.2rem;
+  color: #fff;
+  font-weight: 600;
+}
+
+.footer-column a {
+  color: #888;
+  font-size: 0.9rem;
+  transition: color 0.2s;
+}
+
+.footer-column a:hover {
+  color: #fff;
+}/* .footer-top rule removed previously, now reintroduced above */
+
+.footer-logo {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 2rem;
+}
+
+.footer-bottom {
+  font-size: 0.9rem;
+  color: #666;
+  border-top: 1px solid #222;
+  padding-top: 2rem;
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+  .header {
+    padding: 1rem;
+  }
+  
+  /* .logo-container span {} removed empty rule */
+
+  /* Hide regular nav links on mobile for simplicity, or keep if space permits */
+  .nav {
+    gap: 1rem;
+  }
+  
+  .nav-link {
+    display: none; /* Hiding links for clean mobile view, keeping button */
+  }
+
+  .hero h1 {
+    font-size: 2rem; /* Smaller font for mobile */
+    margin-bottom: 1.5rem;
+  }
+
+  .hero p {
+    font-size: 1rem;
+    padding: 0 1rem;
+    width: 100%;
+  }
+
+  .features {
+    padding: 3rem 1.5rem; /* Reduced padding */
+  }
+
+  .section-title {
+    font-size: 2rem;
+  }
+
+  .tabs {
+    flex-wrap: wrap; /* Stack tabs */
+    gap: 0.5rem;
+  }
+
+  .tab {
+    padding: 0.8rem 1rem;
+    font-size: 0.9rem;
+    width: 100%; /* Full width tabs for easier tapping */
+    border-bottom: 1px solid #eee;
+    text-align: center;
+  }
+  
+  .tab.active {
+    border-bottom: 2px solid #000;
+  }
+
+  .dashboard-container {
+    grid-template-columns: 1fr; /* Single column stack */
+  }
+  
+  .dashboard-preview {
+    min-height: 300px;
+  }
+
+  .feature-card {
+    padding: 2rem;
+  }
+  
+  .feature-card h3 {
+    font-size: 1.5rem;
+  }
+
+  .footer {
+    padding: 3rem 1.5rem;
+  }
+  
+  .footer-top {
+    flex-direction: column;
+    gap: 2rem;
+  }
+  
+  .footer-links {
+    gap: 2rem;
+    flex-wrap: wrap;
+  }
+}
