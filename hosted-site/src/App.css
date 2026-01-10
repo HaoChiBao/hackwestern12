@@ -65,6 +65,8 @@
 }
 
 .btn-get-started {
+  display: inline-block; /* Added for anchor tag support */
+  text-decoration: none; /* Added for anchor tag support */
   background-color: #fff;
   color: #000;
   padding: 0.6rem 1.4rem; /* Slightly smaller padding */
@@ -137,6 +139,8 @@
 }
 
 .btn-demo {
+  display: inline-block; /* Added for anchor tag support */
+  text-decoration: none; /* Added for anchor tag support */
   background: rgba(0, 0, 0, 0.6); /* Darker background for visibility */
   border: 1px solid rgba(255, 255, 255, 0.2);
   padding: 0.8rem 2rem;

@@ -101,7 +101,14 @@ function App() {
         <nav className="nav">
           <a className="nav-link">Products</a>
           <a className="nav-link">Contact</a>
-          <button className="btn-get-started">Get Started</button>
+          <a 
+            href="https://cal.com/james-yang-ukxevk/30min" 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="btn-get-started"
+          >
+            Get Started
+          </a>
         </nav>
       </header>
 
@@ -116,7 +123,14 @@ function App() {
               AI drone system that monitors crowd density before congestion becomes
               dangerous helping prevent overcrowding and crowd crush.
             </p>
-            <button className="btn-demo">Book a Demo &rarr;</button>
+            <a 
+              href="https://cal.com/james-yang-ukxevk/30min" 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="btn-demo"
+            >
+              Book a Demo &rarr;
+            </a>
           </div>
         </section>
 
