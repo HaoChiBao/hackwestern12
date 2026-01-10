@@ -24,19 +24,19 @@ function App() {
   /* Define content for each tab */
   const featuresData: Record<string, { header: string; description: string }> = {
     'Crowd Monitoring': {
-      header: 'Spot incidents before they happen',
+      header: 'Spot Incidents Before they Happen',
       description: 'Monitor crowd density and movement in real time from either an aerial drone feed or existing surveillance cameras. CrowdWatch turns live video into an easy-to-read view of where people are clustering, where flow is slowing, and where pressure is building—so teams can act early and keep areas safe.'
     },
     'Realtime Risk Analysis': {
-      header: 'Know where risk is building instantly',
+      header: 'Know Where Risk is Building Instantly',
       description: 'CrowdWatch continuously analyzes live crowd patterns to detect rising risk, like bottlenecks, surging density, and unusual movement. Risk levels update moment-by-moment, helping operators prioritize the right zones and intervene before conditions escalate.'
     },
     'Automatic Alerts': {
-      header: 'Get alerted the moment it matters',
+      header: 'Get Alerted the Moment it Matters',
       description: 'When crowd conditions cross critical thresholds, CrowdWatch automatically sends alerts with location context and what’s changing (density, flow, risk level). Notifications reach the right responders fast, so issues are handled immediately instead of being noticed too late.'
     },
     'Post Event Report': {
-      header: 'Learn fast. Improve every event.',
+      header: 'Learn Fast. Improve Every Event',
       description: 'After the event, CrowdWatch generates a clear report with peak density windows, hotspot locations, and a timeline of key risk moments. Use these insights to improve staffing, barricade placement, entry/exit design, and safety planning for future events.'
     }
   }
@@ -67,7 +67,7 @@ function App() {
     if (!isInView) return
 
     const intervalTime = 50; // Update every 50ms
-    const duration = 5000; // 5 seconds per tab
+    const duration = 8000; // 8 seconds per tab
     const step = 100 / (duration / intervalTime)
 
     const timer = setInterval(() => {
