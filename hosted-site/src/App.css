@@ -1,0 +1,236 @@
+/* Header */
+.header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem 3rem;
+  z-index: 10;
+  background: transparent;
+}
+
+.logo-container {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  font-size: 1.25rem;
+}
+
+.logo-icon {
+  width: 20px;
+  height: auto;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+}
+
+.nav-link {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #333;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.nav-link:hover {
+  color: #000;
+}
+
+.btn-get-started {
+  background-color: #111;
+  color: #fff;
+  padding: 0.6rem 1.2rem;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: opacity 0.2s;
+}
+
+.btn-get-started:hover {
+  opacity: 0.85;
+}
+
+/* Hero Section */
+.hero {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  background-size: cover;
+  background-position: center;
+  color: #000;
+  padding-top: 60px; /* Offset for header */
+}
+
+.hero::after {
+    /* Optional overlay if text contrast is needed, but design looks clean */
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.hero-content {
+  z-index: 1;
+  max-width: 800px;
+  padding: 0 1rem;
+}
+
+.hero h1 {
+  font-size: 3rem;
+  line-height: 1.2;
+  font-weight: 500;
+  margin-bottom: 2rem;
+  color: #111;
+}
+
+.hero p {
+  font-size: 1.1rem;
+  color: #333;
+  max-width: 600px;
+  margin: 0 auto 3rem;
+  line-height: 1.6;
+}
+
+.btn-demo {
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid #fff;
+  padding: 0.8rem 2rem;
+  font-size: 1rem;
+  color: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  transition: background 0.2s;
+}
+
+/* Using a darker button for visibility if the bg is light clouds */
+.btn-demo.dark-mode {
+    border-color: #333;
+    color: #333;
+}
+
+.btn-demo:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* Features / Dashboard */
+.features {
+  padding: 4rem 3rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.section-title {
+  font-size: 2.5rem;
+  font-weight: 500;
+  margin-bottom: 1rem;
+}
+
+.section-desc {
+  max-width: 600px;
+  margin-bottom: 3rem;
+  color: #444;
+}
+
+.tabs {
+  display: flex;
+  border-bottom: 1px solid #ddd;
+  margin-bottom: 2rem;
+}
+
+.tab {
+  padding: 1rem 2rem;
+  cursor: pointer;
+  color: #888;
+  position: relative;
+  font-weight: 500;
+}
+
+.tab.active {
+  color: #000;
+  border-bottom: 2px solid #000;
+}
+
+.dashboard-container {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 2rem;
+}
+
+.dashboard-preview {
+  background: #000;
+  min-height: 500px; /* Placeholder for image */
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.dashboard-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.feature-card {
+  background: #111;
+  color: #fff;
+  padding: 3rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.feature-card h3 {
+  font-size: 2rem;
+  margin-bottom: 1.5rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.feature-card p {
+  color: #aaa;
+  line-height: 1.6;
+}
+
+/* Footer */
+.footer {
+  background: #111;
+  color: #fff;
+  padding: 4rem 3rem;
+  min-height: 400px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.footer-top {
+    /* Logo area */
+}
+
+.footer-logo {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 2rem;
+}
+
+.footer-bottom {
+  font-size: 0.9rem;
+  color: #666;
+  border-top: 1px solid #222;
+  padding-top: 2rem;
+}
