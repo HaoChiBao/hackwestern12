@@ -1,15 +1,24 @@
 /* Header */
+/* Header */
 .header {
-  position: absolute;
+  position: fixed;
   top: 0;
   left: 0;
   width: 100%;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.5rem 3rem;
-  z-index: 10;
-  background: transparent;
+  padding: 1rem 3rem; /* Reduced padding for shorter height */
+  z-index: 100;
+  background: transparent; /* Transparent initially */
+  transition: all 0.3s ease;
+  color: #fff; /* Default white text for transparent/sky bg */
+}
+
+.header.scrolled {
+  background: #fff; /* White background when scrolled */
+  color: #000;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
 }
 
 .logo-container {
@@ -23,6 +32,12 @@
 .logo-icon {
   width: 20px;
   height: auto;
+  transition: filter 0.3s;
+}
+
+/* Invert logo color on scroll (assuming simple black/white switch) */
+.header.scrolled .logo-icon {
+    filter: invert(1);
 }
 
 .nav {
@@ -34,27 +49,45 @@
 .nav-link {
   font-size: 0.9rem;
   font-weight: 500;
-  color: #333;
+  color: #fff; /* White initially */
   cursor: pointer;
-  transition: color 0.2s;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.header.scrolled .nav-link {
+  color: #000; /* Black when scrolled */
 }
 
 .nav-link:hover {
-  color: #000;
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }
 
 .btn-get-started {
-  background-color: #111;
-  color: #fff;
-  padding: 0.6rem 1.2rem;
+  background-color: #fff;
+  color: #000;
+  padding: 0.6rem 1.4rem; /* Slightly smaller padding */
   border-radius: 4px;
   font-size: 0.9rem;
   font-weight: 600;
-  transition: opacity 0.2s;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+}
+
+/* Invert button on scroll for better look on white */
+.header.scrolled .btn-get-started {
+    background-color: #000;
+    color: #fff;
 }
 
 .btn-get-started:hover {
-  opacity: 0.85;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.header.scrolled .btn-get-started:hover {
+    background-color: #333;
 }
 
 /* Hero Section */
@@ -83,7 +116,7 @@
 
 .hero-content {
   z-index: 1;
-  max-width: 800px;
+  max-width: 1200px; /* Increased from 800px to prevent text wrapping */
   padding: 0 1rem;
 }
 
@@ -104,15 +137,15 @@
 }
 
 .btn-demo {
-  background: rgba(255, 255, 255, 0.2);
-  border: 1px solid #fff;
+  background: rgba(0, 0, 0, 0.6); /* Darker background for visibility */
+  border: 1px solid rgba(255, 255, 255, 0.2);
   padding: 0.8rem 2rem;
   font-size: 1rem;
   color: #fff;
   border-radius: 4px;
   cursor: pointer;
   backdrop-filter: blur(4px);
-  transition: background 0.2s;
+  transition: all 0.2s;
 }
 
 /* Using a darker button for visibility if the bg is light clouds */
@@ -122,7 +155,8 @@
 }
 
 .btn-demo:hover {
-  background: rgba(255, 255, 255, 0.4);
+  background: rgba(0, 0, 0, 0.8);
+  transform: translateY(-1px);
 }
 
 /* Features / Dashboard */
@@ -156,11 +190,28 @@
   color: #888;
   position: relative;
   font-weight: 500;
+  border-bottom: 2px solid transparent; /* Prepare for progress bar */
 }
 
 .tab.active {
   color: #000;
-  border-bottom: 2px solid #000;
+  font-weight: 700; /* Bold text to make it look darker/prominent */
+  /* border-bottom handled by progress bar now */
+}
+
+.progress-bar-container {
+  position: absolute;
+  bottom: -1px; /* Align with bottom border line */
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: transparent;
+}
+
+.progress-bar {
+  height: 100%;
+  background: #000;
+  transition: width 0.05s linear; /* Smooth linear transition */
 }
 
 .dashboard-container {
@@ -190,6 +241,24 @@
   flex-direction: column;
   justify-content: center;
   border-radius: 4px;
+  /* Ensure height content doesn't jump too much, or min-height */
+  min-height: 300px;
+}
+
+/* Animation for tab content */
+.fade-in {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .feature-card h3 {
@@ -216,8 +285,39 @@
 }
 
 .footer-top {
-    /* Logo area */
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  width: 100%;
 }
+
+.footer-links {
+  display: flex;
+  gap: 4rem;
+}
+
+.footer-column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.footer-column h4 {
+  font-size: 1rem;
+  margin-bottom: 0.2rem;
+  color: #fff;
+  font-weight: 600;
+}
+
+.footer-column a {
+  color: #888;
+  font-size: 0.9rem;
+  transition: color 0.2s;
+}
+
+.footer-column a:hover {
+  color: #fff;
+}/* .footer-top rule removed previously, now reintroduced above */
 
 .footer-logo {
     display: flex;
@@ -233,4 +333,88 @@
   color: #666;
   border-top: 1px solid #222;
   padding-top: 2rem;
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+  .header {
+    padding: 1rem;
+  }
+  
+  /* .logo-container span {} removed empty rule */
+
+  /* Hide regular nav links on mobile for simplicity, or keep if space permits */
+  .nav {
+    gap: 1rem;
+  }
+  
+  .nav-link {
+    display: none; /* Hiding links for clean mobile view, keeping button */
+  }
+
+  .hero h1 {
+    font-size: 2rem; /* Smaller font for mobile */
+    margin-bottom: 1.5rem;
+  }
+
+  .hero p {
+    font-size: 1rem;
+    padding: 0 1rem;
+    width: 100%;
+  }
+
+  .features {
+    padding: 3rem 1.5rem; /* Reduced padding */
+  }
+
+  .section-title {
+    font-size: 2rem;
+  }
+
+  .tabs {
+    flex-wrap: wrap; /* Stack tabs */
+    gap: 0.5rem;
+  }
+
+  .tab {
+    padding: 0.8rem 1rem;
+    font-size: 0.9rem;
+    width: 100%; /* Full width tabs for easier tapping */
+    border-bottom: 1px solid #eee;
+    text-align: center;
+  }
+  
+  .tab.active {
+    border-bottom: 2px solid #000;
+  }
+
+  .dashboard-container {
+    grid-template-columns: 1fr; /* Single column stack */
+  }
+  
+  .dashboard-preview {
+    min-height: 300px;
+  }
+
+  .feature-card {
+    padding: 2rem;
+  }
+  
+  .feature-card h3 {
+    font-size: 1.5rem;
+  }
+
+  .footer {
+    padding: 3rem 1.5rem;
+  }
+  
+  .footer-top {
+    flex-direction: column;
+    gap: 2rem;
+  }
+  
+  .footer-links {
+    gap: 2rem;
+    flex-wrap: wrap;
+  }
 }
