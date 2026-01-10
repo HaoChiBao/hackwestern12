@@ -25,19 +25,19 @@ function App() {
   const featuresData: Record<string, { header: string; description: string }> = {
     'Crowd Monitoring': {
       header: 'Spot incidents before they happen',
-      description: 'Monitor crowd density and movement in real time from either an aerial drone feed or existing surveillance cameras. Heimdall turns live video into an easy-to-read view of where people are clustering, where flow is slowing, and where pressure is building—so teams can act early and keep areas safe.'
+      description: 'Monitor crowd density and movement in real time from either an aerial drone feed or existing surveillance cameras. CrowdWatch turns live video into an easy-to-read view of where people are clustering, where flow is slowing, and where pressure is building—so teams can act early and keep areas safe.'
     },
     'Realtime Risk Analysis': {
       header: 'Know where risk is building instantly',
-      description: 'Heimdall continuously analyzes live crowd patterns to detect rising risk, like bottlenecks, surging density, and unusual movement. Risk levels update moment-by-moment, helping operators prioritize the right zones and intervene before conditions escalate.'
+      description: 'CrowdWatch continuously analyzes live crowd patterns to detect rising risk, like bottlenecks, surging density, and unusual movement. Risk levels update moment-by-moment, helping operators prioritize the right zones and intervene before conditions escalate.'
     },
     'Automatic Alerts': {
       header: 'Get alerted the moment it matters',
-      description: 'When crowd conditions cross critical thresholds, Heimdall automatically sends alerts with location context and what’s changing (density, flow, risk level). Notifications reach the right responders fast, so issues are handled immediately instead of being noticed too late.'
+      description: 'When crowd conditions cross critical thresholds, CrowdWatch automatically sends alerts with location context and what’s changing (density, flow, risk level). Notifications reach the right responders fast, so issues are handled immediately instead of being noticed too late.'
     },
     'Post Event Report': {
       header: 'Learn fast. Improve every event.',
-      description: 'After the event, Heimdall generates a clear report with peak density windows, hotspot locations, and a timeline of key risk moments. Use these insights to improve staffing, barricade placement, entry/exit design, and safety planning for future events.'
+      description: 'After the event, CrowdWatch generates a clear report with peak density windows, hotspot locations, and a timeline of key risk moments. Use these insights to improve staffing, barricade placement, entry/exit design, and safety planning for future events.'
     }
   }
 
@@ -99,7 +99,7 @@ function App() {
           <span>Aerotir</span>
         </div>
         <nav className="nav">
-          <a href="#heimdall" className="nav-link">Products</a>
+          <a href="#CrowdWatch" className="nav-link">Products</a>
           <a className="nav-link">Contact</a>
           <a 
             href="https://cal.com/james-yang-ukxevk/30min" 
@@ -134,8 +134,8 @@ function App() {
           </div>
         </section>
 
-        <section id="heimdall" className="features">
-          <h2 className="section-title">Heimdall:</h2>
+        <section id="CrowdWatch" className="features">
+          <h2 className="section-title">CrowdWatch:</h2>
           <p className="section-desc">
             Our AI drone system that monitors crowd density before congestion becomes
             dangerous helping prevent overcrowding and crowd crush.
