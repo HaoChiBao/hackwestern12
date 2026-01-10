@@ -99,7 +99,7 @@ function App() {
           <span>Aerotir</span>
         </div>
         <nav className="nav">
-          <a className="nav-link">Products</a>
+          <a href="#heimdall" className="nav-link">Products</a>
           <a className="nav-link">Contact</a>
           <a 
             href="https://cal.com/james-yang-ukxevk/30min" 
@@ -134,7 +134,7 @@ function App() {
           </div>
         </section>
 
-        <section className="features">
+        <section id="heimdall" className="features">
           <h2 className="section-title">Heimdall:</h2>
           <p className="section-desc">
             Our AI drone system that monitors crowd density before congestion becomes
@@ -163,9 +163,15 @@ function App() {
 
           <div className="dashboard-container">
             <div className="dashboard-preview">
-              {/* Using droneBg as placeholder for dashboard since specific dashboard img wasn't found */}
-              {/* In a real scenario, this would be the dashboard screenshot */}
-              <img src={droneBg} alt="Dashboard Preview" style={{ opacity: 0.8 }} />
+              <iframe 
+                width="100%" 
+                height="100%" 
+                src="https://www.youtube.com/embed/sdX6YAMYKGA" 
+                title="CrowdWatch" 
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+                referrerPolicy="strict-origin-when-cross-origin" 
+                allowFullScreen
+              ></iframe>
             </div>
             <div className="feature-card" key={activeTab}> {/* key triggers animation reset */}
               <div className="fade-in">
