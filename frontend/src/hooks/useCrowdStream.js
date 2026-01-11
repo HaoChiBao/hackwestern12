@@ -15,7 +15,7 @@ const useCrowdStream = () => {
   useEffect(() => {
     // Initialize Socket
     socketRef.current = io(SOCKET_URL, {
-      transports: ['websocket'],
+      transports: ['polling', 'websocket'],
       reconnectionAttempts: 5
     });
 

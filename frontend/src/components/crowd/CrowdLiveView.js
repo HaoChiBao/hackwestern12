@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Eye, Video, Maximize2, Settings, Activity, Users, AlertTriangle, MapPin } from 'lucide-react';
 
-const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAlert, highlightedPinId, heatmapGrid, isConnected, sendFrame }) => {
+const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAlert, highlightedPinId, heatmapGrid, isConnected, sendFrame, joinRoom, updatePlaybackTime }) => {
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [isPinMode, setIsPinMode] = useState(false);
   const [nextPinName, setNextPinName] = useState('');
@@ -17,6 +17,8 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
   const [isDragging, setIsDragging] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
+  const [playbackUrl, setPlaybackUrl] = useState(null);
+  const [websocketRoom, setWebsocketRoom] = useState(null);
 
   // Handle Source Change
   const handleSourceChange = async (mode) => {
@@ -88,7 +90,7 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
       setUploadProgress(0);
 
       try {
-        await new Promise((resolve, reject) => {
+        const response = await new Promise((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           
           xhr.upload.addEventListener('progress', (event) => {
@@ -99,20 +101,47 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
           });
           
           xhr.addEventListener('load', () => {
+            console.log('[Upload] Response Status:', xhr.status);
+            console.log('[Upload] Response Text:', xhr.responseText);
+            
             if (xhr.status >= 200 && xhr.status < 300) {
-              resolve();
+              try {
+                const data = JSON.parse(xhr.responseText);
+                console.log('[Upload] Parsed Data:', data);
+                
+                if (data.success) {
+                    resolve(data);
+                } else {
+                    console.error('[Upload] Server returned success=false:', data.error);
+                    reject(new Error(data.error || 'Upload failed'));
+                }
+              } catch (e) {
+                console.error('[Upload] JSON Parse Error:', e);
+                reject(new Error('Invalid response'));
+              }
             } else {
+              console.error('[Upload] HTTP Error:', xhr.statusText);
               reject(new Error('Upload failed'));
             }
           });
           
-          xhr.addEventListener('error', () => reject(new Error('Upload failed')));
+          xhr.addEventListener('error', (e) => {
+            console.error('[Upload] Network Error:', e);
+            reject(new Error('Upload failed'));
+          });
           
-          xhr.open('POST', 'http://localhost:5000/upload_video');
+          console.log('[Upload] Starting upload to http://localhost:5000/api/upload');
+          xhr.open('POST', 'http://localhost:5000/api/upload');
           xhr.send(formData);
         });
         
         setSourceMode('upload');
+        setPlaybackUrl(response.playbackUrl);
+        setWebsocketRoom(response.websocketRoom);
+        if (joinRoom && response.websocketRoom) {
+            joinRoom(response.websocketRoom);
+        }
+        
         setIsVideoUploaded(true);
         stopWebcam();
         setUploadProgress(100);
@@ -602,7 +631,7 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
         setUploadProgress(0);
 
         try {
-          await new Promise((resolve, reject) => {
+          const response = await new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
             
             xhr.upload.addEventListener('progress', (event) => {
@@ -613,20 +642,47 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
             });
             
             xhr.addEventListener('load', () => {
+              console.log('[DropUpload] Response Status:', xhr.status);
+              console.log('[DropUpload] Response Text:', xhr.responseText);
+
               if (xhr.status >= 200 && xhr.status < 300) {
-                resolve();
+                try {
+                    const data = JSON.parse(xhr.responseText);
+                    console.log('[DropUpload] Parsed Data:', data);
+
+                    if (data.success) {
+                        resolve(data);
+                    } else {
+                        console.error('[DropUpload] Server returned success=false:', data.error);
+                        reject(new Error(data.error || 'Upload failed'));
+                    }
+                } catch (e) {
+                    console.error('[DropUpload] JSON Parse Error:', e);
+                    reject(new Error('Invalid response'));
+                }
               } else {
+                console.error('[DropUpload] HTTP Error:', xhr.statusText);
                 reject(new Error('Upload failed'));
               }
             });
             
-            xhr.addEventListener('error', () => reject(new Error('Upload failed')));
+            xhr.addEventListener('error', (e) => {
+                console.error('[DropUpload] Network Error:', e);
+                reject(new Error('Upload failed'));
+            });
             
-            xhr.open('POST', 'http://localhost:5000/upload_video');
+            console.log('[DropUpload] Starting upload to http://localhost:5000/api/upload');
+            xhr.open('POST', 'http://localhost:5000/api/upload');
             xhr.send(formData);
           });
           
           setSourceMode('upload');
+          setPlaybackUrl(response.playbackUrl);
+          setWebsocketRoom(response.websocketRoom);
+          if (joinRoom && response.websocketRoom) {
+            joinRoom(response.websocketRoom);
+          }
+
           setIsVideoUploaded(true);
           setUploadProgress(100);
           setTimeout(() => {
@@ -855,7 +911,7 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
                             </p>
                         </div>
                     </div>
-                ) : isConnected ? (
+                ) : isConnected && sourceMode !== 'upload' ? (
                     <img 
                         id="live-video-feed"
                         src="http://localhost:5000/video_feed" 
@@ -866,6 +922,24 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
                             height: '100%', 
                             objectFit: 'contain' 
                         }} 
+                    />
+                ) : sourceMode === 'upload' && isVideoUploaded && playbackUrl ? (
+                    <video
+                        id="live-video-feed"
+                        crossOrigin="anonymous"
+                        controls
+                        autoPlay
+                        src={playbackUrl}
+                        style={{
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'contain'
+                        }}
+                        onTimeUpdate={(e) => {
+                            if (updatePlaybackTime) {
+                                updatePlaybackTime(e.target.currentTime * 1000);
+                            }
+                        }}
                     />
                 ) : (
                     <div style={{

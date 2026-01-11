@@ -34,6 +34,7 @@ def upload_file_to_s3(file_obj, object_name, content_type=None):
         extra_args['ContentType'] = content_type
 
     try:
+        print(f"[DEBUG] Uploading {object_name} to bucket {BUCKET_NAME}")
         s3_client.upload_fileobj(file_obj, BUCKET_NAME, object_name, ExtraArgs=extra_args)
         s3_uri = f"s3://{BUCKET_NAME}/{object_name}"
         logger.info(f"Successfully uploaded to {s3_uri}")

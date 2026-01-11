@@ -7,7 +7,7 @@ import CrowdAlertsPanel from './CrowdAlertsPanel';
 import SessionControl from './SessionControl';
 
 const CrowdSafetyDashboard = ({ sessionName, setSessionName, onAlertsUpdate, onSessionEnd }) => {
-  const { current, history, alerts: globalAlerts, heatmapGrid, isConnected, sendFrame, clearAlert } = useCrowdStream();
+  const { current, history, alerts: globalAlerts, heatmapGrid, isConnected, sendFrame, clearAlert, joinRoom, updatePlaybackTime } = useCrowdStream();
   const [pins, setPins] = useState([]);
   const [pinStats, setPinStats] = useState([]);
   const [pinAlerts, setPinAlerts] = useState([]);
@@ -173,6 +173,8 @@ const CrowdSafetyDashboard = ({ sessionName, setSessionName, onAlertsUpdate, onS
             heatmapGrid={heatmapGrid}
             isConnected={isConnected}
             sendFrame={sendFrame}
+            joinRoom={joinRoom}
+            updatePlaybackTime={updatePlaybackTime}
           />
         </div>
         

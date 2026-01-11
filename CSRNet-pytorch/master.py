@@ -1,29 +1,31 @@
+# eventlet.monkey_patch()
+
 import cv2
 import numpy as np
 import torch
 import base64
 import time
 import threading
-import eventlet
 import os
 import uuid
 import json
 from torchvision import transforms
 from flask import Flask, Response, request, jsonify
 from flask_socketio import SocketIO, emit, join_room
+from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from services.s3 import upload_file_to_s3, create_presigned_get_url, download_s3_to_local
 from services.livekit import generate_token
 
 # Patch for better async performance with Flask-SocketIO
-eventlet.monkey_patch()
+# eventlet.monkey_patch() # moved to top
 
 from model import CSRNet
 
 # ----------------------
 # Configuration
 # ----------------------
-RTMP_URL = os.getenv('DRONE_RTMP_INPUT_URL', "rtmp://192.168.2.90:1935/live/dji")
+RTMP_URL = os.getenv('DRONE_RTMP_INPUT_URL', "rtmp://172.20.10.2:1935/live/dji")
 MODEL_PATH = os.getenv('MODEL_PATH', "csrnet_pretrained.pth")
 UPLOAD_FOLDER = 'uploads' # Local temp folder
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -72,14 +74,8 @@ transform = transforms.Compose([
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
-
-@app.after_request
-def after_request(response):
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
-    response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
-    return response
+CORS(app, resources={r"/*": {"origins": "*"}})
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # ----------------------
 # Analytics Logic
@@ -279,13 +275,17 @@ def upload_video():
     3. Generate presigned URL.
     4. Start background processing on local temp.
     """
+    print("[DEBUG] /api/upload hit")
     if 'file' not in request.files:
+        print("[DEBUG] No file part in request")
         return jsonify({'error': 'No file part'}), 400
     
     file = request.files['file']
     client_id = request.form.get('clientId', 'anon')
+    print(f"[DEBUG] Filename: {file.filename}, ClientID: {client_id}")
     
     if file.filename == '':
+        print("[DEBUG] Empty filename")
         return jsonify({'error': 'No selected file'}), 400
 
     try:
@@ -319,7 +319,9 @@ def upload_video():
         })
         
     except Exception as e:
-        print(f"Upload error: {e}")
+        print(f"[DEBUG] Upload error Exception: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/analyze/start', methods=['POST'])
@@ -360,5 +362,5 @@ def start_drone_thread():
 
 if __name__ == '__main__':
     print("Starting Flask-SocketIO server on port 5000...")
-    start_drone_thread()
+    # start_drone_thread() # Disabled for upload focus
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)
