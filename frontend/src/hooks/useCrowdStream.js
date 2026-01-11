@@ -20,6 +20,11 @@ const useCrowdStream = () => {
     });
 
     const socket = socketRef.current;
+    
+    // Buffer for uploaded video analytics
+    // Stored on the socket object for easy access in helper functions without refs
+    const playbackBuffer = new Map();
+    socket.playbackBuffer = playbackBuffer;
 
     socket.on('connect', () => {
       console.log('Connected to crowd stream backend');
@@ -31,101 +36,122 @@ const useCrowdStream = () => {
       setIsConnected(false);
     });
 
-    socket.on('heatmap_update', (data) => {
-      const { grid, stats, timestamp } = data;
-      
-      // Transform backend stats to frontend format
-      // Backend: { totalPeople, globalDensity, globalRiskLevel, maxDensity }
-      // Frontend expects: { timestamp, totalPeople, globalDensity, globalRiskLevel, zones: [] }
-      
-      // We need to synthesize "zones" if the frontend relies on them for the list view
-      // For now, we can create a single "Global Zone" or map the grid to zones if we had coordinates.
-      // Let's create a dummy zone list to keep the UI happy.
-      const zones = [
-        {
-          id: 'z1',
-          name: 'Live Sector',
-          peopleCount: stats.totalPeople,
-          density: stats.globalDensity,
-          riskLevel: stats.globalRiskLevel,
-          // Add dummy values for others to prevent crashes
-          packingScore: stats.globalDensity,
-          avgSpeed: Math.max(0.1, 1.0 - stats.globalDensity),
-          inflow: 0,
-          outflow: 0,
-          netFlow: 0
+    // Unified analytics handler
+    const handleAnalytics = (data) => {
+        // If buffered data (has t_ms), store it
+        if (data.t_ms !== undefined) {
+            playbackBuffer.set(data.t_ms, data);
+            return;
         }
-      ];
+        
+        // Otherwise treat as live data
+        processAnalyticsData(data);
+    };
 
-      // Calculate max density for this frame
-      let frameMax = 0;
-      if (grid) {
-          for (let i = 0; i < grid.length; i++) {
-              if (grid[i] > frameMax) frameMax = grid[i];
-          }
-      }
-
-      // Smooth max density to prevent flickering colors
-      // We use a ref to store the previous max since we are inside a callback
-      // But we can't easily access state here without deps.
-      // Let's just pass the raw frameMax and let the hook state handle smoothing or just pass raw.
-      // Actually, let's do simple smoothing here if we can.
-      // We'll attach it to the stats object.
-      
-      const newGlobalStats = {
-        timestamp: timestamp || Date.now(),
-        totalPeople: stats.totalPeople,
-        globalDensity: stats.globalDensity,
-        globalRiskLevel: stats.globalRiskLevel,
-        maxDensity: frameMax, // Pass raw max for this frame
-        zones: zones
-      };
-
-      setCurrent(newGlobalStats);
-      setHeatmapGrid(grid);
-
-      // Update History
-      setHistory(prev => {
-        const newHist = [...prev, newGlobalStats];
-        if (newHist.length > 60) return newHist.slice(newHist.length - 60);
-        return newHist;
-      });
-
-      // Generate Alerts based on risk level
-      if (stats.globalRiskLevel === 'critical' || stats.globalRiskLevel === 'high') {
-        setAlerts(prev => {
-          // Simple debounce: don't add if last alert was recent and same type
-          const lastAlert = prev[0];
-          if (lastAlert && lastAlert.severity === stats.globalRiskLevel && (Date.now() - lastAlert.timestamp < 5000)) {
-            return prev;
-          }
-          
-          return [{
-            id: `${Date.now()}-alert`,
-            timestamp: Date.now(),
-            zoneId: 'z1',
-            zoneName: 'Live Sector',
-            severity: stats.globalRiskLevel,
-            message: `High density detected: ${(stats.globalDensity * 100).toFixed(0)}% capacity.`
-          }, ...prev].slice(0, 20);
-        });
-      }
-    });
-
-    // Video is now handled via MJPEG stream URL directly in the component
+    socket.on('analytics:update', handleAnalytics);
+    
+    // Legacy support
+    socket.on('heatmap_update', handleAnalytics);
 
     return () => {
       if (socket) socket.disconnect();
     };
   }, []);
 
+  const processAnalyticsData = (data) => {
+      const { grid, stats, timestamp } = data;
+      
+      const zones = [
+        {
+          id: 'z1',
+          name: 'Live Sector',
+          peopleCount: stats.totalPeople || stats.total_people || 0,
+          density: stats.globalDensity || stats.density || 0,
+          riskLevel: stats.globalRiskLevel || stats.risk_level || 'low',
+          packingScore: (stats.globalDensity || stats.density || 0),
+          avgSpeed: Math.max(0.1, 1.0 - (stats.globalDensity || stats.density || 0)),
+          inflow: 0, outflow: 0, netFlow: 0
+        }
+      ];
+
+      let frameMax = stats.maxDensity || 0;
+      if (grid && frameMax === 0) {
+          for (let i = 0; i < grid.length; i++) {
+              if (grid[i] > frameMax) frameMax = grid[i];
+          }
+      }
+
+      const newGlobalStats = {
+        timestamp: timestamp || Date.now(),
+        totalPeople: stats.totalPeople || stats.total_people || 0,
+        globalDensity: stats.globalDensity || stats.density || 0,
+        globalRiskLevel: stats.globalRiskLevel || stats.risk_level || 'low',
+        maxDensity: frameMax,
+        zones: zones
+      };
+
+      setCurrent(newGlobalStats);
+      setHeatmapGrid(grid);
+
+      setHistory(prev => {
+        const newHist = [...prev, newGlobalStats];
+        if (newHist.length > 60) return newHist.slice(newHist.length - 60);
+        return newHist;
+      });
+
+      const riskLevel = newGlobalStats.globalRiskLevel;
+      if (riskLevel === 'critical' || riskLevel === 'high') {
+        setAlerts(prev => {
+          const lastAlert = prev[0];
+          if (lastAlert && lastAlert.severity === riskLevel && (Date.now() - lastAlert.timestamp < 5000)) {
+            return prev;
+          }
+          return [{
+            id: `${Date.now()}-alert`,
+            timestamp: Date.now(),
+            zoneId: 'z1',
+            zoneName: 'Live Sector',
+            severity: riskLevel,
+            message: `High density detected: ${(newGlobalStats.globalDensity * 100).toFixed(0)}% capacity.`
+          }, ...prev].slice(0, 20);
+        });
+      }
+  };
+
   const sendFrame = (image) => {
     if (socketRef.current && isConnected) {
       socketRef.current.emit('process_frame', { image });
     }
   };
+  
+  const joinRoom = (roomName) => {
+      if (socketRef.current && isConnected) {
+          console.log('Joining room:', roomName);
+          socketRef.current.emit('join', { room: roomName });
+      }
+  };
 
-  // Function to clear/resolve an alert
+  const updatePlaybackTime = (timeMs) => {
+      if (!socketRef.current || !socketRef.current.playbackBuffer) return;
+      
+      const buffer = socketRef.current.playbackBuffer;
+      let bestTime = -1;
+      let bestDiff = 500; // 500ms window
+
+      for (const t of buffer.keys()) {
+          const diff = Math.abs(t - timeMs);
+          if (diff < bestDiff) {
+              bestDiff = diff;
+              bestTime = t;
+          }
+      }
+
+      if (bestTime !== -1) {
+          const data = buffer.get(bestTime);
+          if (data) processAnalyticsData(data);
+      }
+  };
+
   const clearAlert = (alertId) => {
     setAlerts(prev => prev.filter(a => a.id !== alertId));
   };
@@ -137,7 +163,9 @@ const useCrowdStream = () => {
     heatmapGrid, 
     isConnected, 
     sendFrame,
-    clearAlert  // Export clearAlert function
+    joinRoom,
+    updatePlaybackTime,
+    clearAlert 
   };
 };
 
