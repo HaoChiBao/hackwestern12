@@ -345,7 +345,7 @@ def on_join(data):
 def handle_webcam_frame(data):
     """
     DEPRECATED: Websocket frame processing.
-    """
+    """      
     socketio.emit('error', {
         'message': 'Websocket frame processing is deprecated. Use LiveKit publishing.'
     })

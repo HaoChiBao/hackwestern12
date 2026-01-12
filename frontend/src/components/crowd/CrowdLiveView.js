@@ -7,6 +7,7 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
   const [nextPinName, setNextPinName] = useState('');
   const [sourceMode, setSourceMode] = useState('upload'); // 'drone', 'webcam', 'upload'
   const videoRef = useRef(null);
+  const fullscreenRef = useRef(null);
   const webcamRef = useRef(null);
   const fileInputRef = useRef(null);
   const canvasRef = useRef(null);
@@ -19,6 +20,7 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
   const [isUploading, setIsUploading] = useState(false);
   const [playbackUrl, setPlaybackUrl] = useState(null);
   const [websocketRoom, setWebsocketRoom] = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Handle Source Change
   const handleSourceChange = async (mode) => {
@@ -724,8 +726,32 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
     }
   };
 
+  const handleStartStream = () => {
+      // Default to drone or webcam if not set?
+     // For now, let's just trigger the current source mode's start logic if applicable
+     // But simpler: just use handleSourceChange(sourceMode) to restart?
+     // Or specifically start webcam/drone
+     if (sourceMode === 'webcam') startWebcam();
+     else if (sourceMode === 'drone') handleSourceChange('drone');
+     else if (sourceMode === 'upload') fileInputRef.current.click();
+  };
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+        if (fullscreenRef.current) {
+            fullscreenRef.current.requestFullscreen().catch(err => {
+                console.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
+            });
+        }
+    } else {
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        }
+    }
+  };
+
   return (
-    <div className="panel" style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
+    <div ref={fullscreenRef} className="panel" style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-secondary)' }}>
       {/* Toolbar */}
       <div style={{ 
         padding: '0.5rem', 
@@ -748,8 +774,20 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
             />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-            <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--success)', animation: 'pulse 2s infinite' }}></div>
-            <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--success)' }}>LIVE</span>
+            <div style={{ 
+                width: 6, 
+                height: 6, 
+                borderRadius: '50%', 
+                backgroundColor: sourceMode === 'upload' ? 'var(--text-disabled)' : 'var(--success)', 
+                animation: sourceMode === 'upload' ? 'none' : 'pulse 2s infinite',
+                filter: sourceMode === 'upload' ? 'grayscale(100%) opacity(0.5)' : 'none'
+            }}></div>
+            <span style={{ 
+                fontSize: '0.7rem', 
+                fontWeight: 700, 
+                color: sourceMode === 'upload' ? 'var(--text-disabled)' : 'var(--success)',
+                filter: sourceMode === 'upload' ? 'opacity(0.5)' : 'none'
+            }}>LIVE</span>
           </div>
         </div>
         
@@ -789,17 +827,35 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
             <Eye size={14} /> {showHeatmap ? 'HEATMAP ON' : 'HEATMAP OFF'}
           </button>
           <div style={{ width: '1px', height: '24px', backgroundColor: 'var(--border-color)', margin: '0 0.25rem' }}></div>
-          <button 
-            className="btn"
-            onClick={handleStopStream}
-            title="Stop All Streams"
-            style={{ backgroundColor: 'var(--danger)', color: 'white' }}
-          >
-            Stop Stream
-          </button>
+          {/* Stream Toggle Logic: 
+              Webcam: check if stream active 
+              Upload: check if video uploaded
+              Drone: check if connected (proxy for stream active)
+          */}
+          {(sourceMode === 'webcam' && webcamRef.current?.srcObject) || 
+           (sourceMode === 'upload' && isVideoUploaded) ||
+           (sourceMode === 'drone' && isConnected) ? (
+            <button 
+                className="btn"
+                onClick={handleStopStream}
+                title="Stop Stream"
+                style={{ backgroundColor: 'var(--danger)', color: 'white' }}
+            >
+                STOP STREAM
+            </button>
+          ) : (
+            <button 
+                className="btn"
+                onClick={handleStartStream}
+                title="Start Stream"
+                style={{ backgroundColor: 'var(--success)', color: 'white' }}
+            >
+                START STREAM
+            </button>
+          )}
           <div style={{ width: '1px', height: '24px', backgroundColor: 'var(--border-color)', margin: '0 0.25rem' }}></div>
-          <button className="btn" title="Settings"><Settings size={14} /></button>
-          <button className="btn" title="Fullscreen"><Maximize2 size={14} /></button>
+          <button className="btn" title="Settings" onClick={() => setShowSettings(true)}><Settings size={14} /></button>
+          <button className="btn" title="Fullscreen" onClick={toggleFullscreen}><Maximize2 size={14} /></button>
         </div>
       </div>
 
@@ -1013,22 +1069,7 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
           </div>
         ))}
 
-        {/* HUD Overlay - Top Left */}
-        <div style={{
-          position: 'absolute',
-          top: '1rem',
-          left: '1rem',
-          fontFamily: 'monospace',
-          color: 'rgba(255,255,255,0.8)',
-          fontSize: '0.7rem',
-          lineHeight: '1.4',
-          textShadow: '0 1px 2px rgba(0,0,0,0.8)',
-          pointerEvents: 'none'
-        }}>
-          <p>CAM_ID: 8492-A</p>
-          <p>RES: 4K</p>
-          <p>FPS: 60</p>
-        </div>
+        {/* HUD Overlay - Top Left - REMOVED CAM_ID */}
 
         {/* Source Dropdown - Top Right Overlay */}
         <div style={{
@@ -1109,6 +1150,39 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
           <div style={{ position: 'absolute', top: '50%', left: '50%', width: '4px', height: '4px', background: 'rgba(255,255,255,0.5)', transform: 'translate(-50%, -50%)', borderRadius: '50%' }}></div>
         </div>
       </div>
+      
+      {/* Settings Modal */}
+      {showSettings && (
+        <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000
+        }} onClick={() => setShowSettings(false)}>
+            <div style={{
+                backgroundColor: 'var(--bg-secondary)',
+                padding: '2rem',
+                borderRadius: '8px',
+                width: '400px',
+                border: '1px solid var(--border-color)',
+                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
+            }} onClick={e => e.stopPropagation()}>
+                <h3 style={{ marginTop: 0, color: 'var(--text-primary)' }}>Settings</h3>
+                <div style={{ height: '100px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
+                    Settings placeholder...
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+                    <button className="btn" onClick={() => setShowSettings(false)}>Close</button>
+                </div>
+            </div>
+        </div>
+      )}
     </div>
   );
 };
