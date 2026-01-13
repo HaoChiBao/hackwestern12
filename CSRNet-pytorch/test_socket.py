@@ -24,8 +24,8 @@ def on_message(data):
 
 if __name__ == '__main__':
     try:
-        print('[TEST] Attempting to connect to http://localhost:5000...')
-        sio.connect('http://localhost:5000') # Removed forced websocket
+        print('[TEST] Attempting to connect to http://localhost:5001...')
+        sio.connect('http://localhost:5001') # Removed forced websocket
         
         # Test Emit (if applicable) or just wait
         time.sleep(2)

@@ -34,7 +34,7 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
       stopWebcam();
       
       // Stop backend stream
-      await fetch('http://localhost:5000/stop_stream', {
+      await fetch('http://localhost:5001/stop_stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       }).catch(e => console.log('Stop stream:', e.message));
@@ -56,7 +56,7 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
       
       // Notify backend
       try {
-        await fetch('http://localhost:5000/set_source', {
+        await fetch('http://localhost:5001/set_source', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ source: 'webcam' })
@@ -67,7 +67,7 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
     } else if (mode === 'drone') {
       // Notify backend to start drone stream
       try {
-        await fetch('http://localhost:5000/set_source', {
+        await fetch('http://localhost:5001/set_source', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ source: 'drone' })
@@ -132,8 +132,8 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
             reject(new Error('Upload failed'));
           });
           
-          console.log('[Upload] Starting upload to http://localhost:5000/api/upload');
-          xhr.open('POST', 'http://localhost:5000/api/upload');
+          console.log('[Upload] Starting upload to http://localhost:5001/api/upload');
+          xhr.open('POST', 'http://localhost:5001/api/upload');
           xhr.send(formData);
         });
         
@@ -673,8 +673,8 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
                 reject(new Error('Upload failed'));
             });
             
-            console.log('[DropUpload] Starting upload to http://localhost:5000/api/upload');
-            xhr.open('POST', 'http://localhost:5000/api/upload');
+            console.log('[DropUpload] Starting upload to http://localhost:5001/api/upload');
+            xhr.open('POST', 'http://localhost:5001/api/upload');
             xhr.send(formData);
           });
           
@@ -717,7 +717,7 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
     
     // Notify backend to stop stream
     try {
-      await fetch('http://localhost:5000/stop_stream', {
+      await fetch('http://localhost:5001/stop_stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -970,7 +970,7 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
                 ) : isConnected && sourceMode !== 'upload' ? (
                     <img 
                         id="live-video-feed"
-                        src="http://localhost:5000/video_feed" 
+                        src="http://localhost:5001/video_feed" 
                         alt="Live Stream" 
                         crossOrigin="anonymous"
                         style={{ 

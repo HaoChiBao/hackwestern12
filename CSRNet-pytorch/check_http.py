@@ -4,7 +4,7 @@ import urllib.error
 
 try:
     print("Testing Basic HTTP connectivity...")
-    url = 'http://localhost:5000/socket.io/?EIO=4&transport=polling'
+    url = 'http://localhost:5001/socket.io/?EIO=4&transport=polling'
     with urllib.request.urlopen(url) as response:
         print(f"Status Code: {response.getcode()}")
         print(f"Response: {response.read().decode('utf-8')[:200]}")
