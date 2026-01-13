@@ -10,7 +10,7 @@ numpy
 torch
 torchvision
 werkzeug
-mnest
+# mnest
 python-engineio
 python-socketio
-opencv-python
+# opencv-python
