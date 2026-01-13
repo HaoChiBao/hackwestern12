@@ -26,6 +26,8 @@ from model import CSRNet
 # Configuration
 # ----------------------
 RTMP_URL = os.getenv('DRONE_RTMP_INPUT_URL', "rtmp://172.20.10.2:1935/live/dji")
+LIVEKIT_INGRESS_URL = os.getenv('LIVEKIT_INGRESS_RTMP_URL', "")
+LIVE_MODE = os.getenv('LIVE_MODE', 'direct_ingress') # 'direct_ingress' or 'ffmpeg_relay'
 MODEL_PATH = os.getenv('MODEL_PATH', "csrnet_pretrained.pth")
 UPLOAD_FOLDER = 'uploads' # Local temp folder
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -170,21 +172,27 @@ def drone_processing_loop():
     
     while drone_active:
         if not cap.isOpened():
-             print(f"RTMP source {RTMP_URL} not ready, re-check in 5s...")
+             print(f"[DEBUG] RTMP source {RTMP_URL} not ready/closed, re-check in 5s...")
              socketio.sleep(5)
              cap = cv2.VideoCapture(RTMP_URL)
              continue
 
         success, frame = cap.read()
         if not success:
-            # print("Failed to read drone frame. Retrying...") 
-            # (Reduce log spam)
+            print("[DEBUG] Failed to read drone frame (stream invalid or empty). Retrying...") 
             cap.release()
             socketio.sleep(1)
             cap = cv2.VideoCapture(RTMP_URL)
             continue
-            
+        
+        if frame_count == 0:
+            print(f"[DEBUG] FIRST FRAME READ SUCCESS from {RTMP_URL}")
+            print(f"[DEBUG] Frame Shape: {frame.shape}")
+
         frame_count += 1
+        if frame_count % 100 == 0:
+            print(f"[DEBUG] Processed {frame_count} frames from drone stream")
+
         if frame_count % HEATMAP_INTERVAL == 0:
             heatmap_grid, stats = process_frame_for_heatmap(frame)
             # Emit to 'drone_feed' room
@@ -265,6 +273,112 @@ def get_livekit_token():
         })
     except Exception as e:
         print(f"Error generating token: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/livekit/ingress/info', methods=['GET'])
+def get_ingress_info():
+    """
+    Returns connection details for the Drone (Direct Ingress Architecture).
+    """
+    try:
+        ingress_url = os.getenv('LIVEKIT_INGRESS_RTMP_URL', '')
+        
+        # Mask the secret key for safety if possible
+        masked_url = ingress_url
+        if 'livekit.cloud' in ingress_url and '/' in ingress_url:
+            parts = ingress_url.rsplit('/', 1)
+            if len(parts) == 2:
+                base, key = parts
+                masked_key = key[:4] + '****' + key[-4:] if len(key) > 8 else '****'
+                masked_url = f"{base}/{masked_key}"
+
+        return jsonify({
+            'roomName': 'default-room',
+            'identity': 'drone',
+            'publishUrl': ingress_url, # Full URL needed for DJI copy-paste
+            'maskedUrl': masked_url,
+            'instructions': 'Copy the Publish URL and paste it into your DJI "Custom RTMP" settings.'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/livekit/room/status', methods=['GET'])
+def get_room_status():
+    """
+    Checks if the drone is currently part of the room.
+    """
+    try:
+        room_name = request.args.get('room', 'default-room')
+        
+        # We need to query LiveKit API
+        # Simple check: Is "drone" connected?
+        import asyncio
+        from services.livekit import get_livekit_config
+        from livekit import api
+        
+        conf = get_livekit_config()
+        if not conf['url'] or not conf['api_key']:
+             return jsonify({'error': 'LiveKit not configured'}), 500
+
+        # Create localized API instance for this status check
+        # (In prod, reuse a global instance)
+        lkapi = api.LiveKitAPI(conf['url'], conf['api_key'], os.getenv('LIVEKIT_API_SECRET'))
+        
+        async def check_participant():
+            try:
+                # List participants in the room
+                # list_participants returns a response object with 'participants' list
+                res = await lkapi.room.list_participants(api.ListParticipantsRequest(room=room_name))
+                for p in res.participants:
+                    if p.identity == 'drone':
+                        return {
+                            'connected': True,
+                            'state': str(p.state),
+                            'tracks': [t.sid for t in p.tracks]
+                        }
+                return {'connected': False}
+            finally:
+                await lkapi.aclose()
+
+        status = asyncio.run(check_participant())
+        return jsonify(status)
+        
+    except Exception as e:
+        print(f"Error checking room status: {e}")
+        return jsonify({'error': str(e), 'connected': False})
+
+@app.route('/api/livekit/ingress/create', methods=['POST'])
+def create_ingress_endpoint():
+    # 1. Security Check
+    auth_header = request.headers.get('Authorization')
+    expected_secret = os.getenv('ADMIN_DEBUG_TOKEN', 'hackwestern_debug_secret')
+    
+    # Allow Bearer token or simple direct string match
+    token = auth_header.replace('Bearer ', '') if auth_header else ''
+    
+    if token != expected_secret:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    try:
+        data = request.json or {}
+        room_name = data.get('room', 'default-room')
+        
+        # We need to run the async function from sync Flask
+        import asyncio
+        from services.livekit import create_ingress
+        
+        # Use asyncio.run()
+        info = asyncio.run(create_ingress(room_name))
+        
+        return jsonify({
+            'ingressId': info.ingress_id,
+            'url': info.url,
+            'streamKey': info.stream_key,
+            'fullPublishUrl': f"{info.url}/{info.stream_key}"
+        })
+        
+    except Exception as e:
+        print(f"Error creating ingress via API: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/upload', methods=['POST'])
@@ -361,6 +475,14 @@ def start_drone_thread():
         drone_thread = socketio.start_background_task(drone_processing_loop)
 
 if __name__ == '__main__':
-    print("Starting Flask-SocketIO server on port 8000...")
-    # start_drone_thread() # Disabled for upload focus
+    print(f"Starting Flask-SocketIO server on port 8000 (Mode: {LIVE_MODE})...")
+    
+    if LIVE_MODE == 'ffmpeg_relay':
+        print("[INFO] LIVE_MODE=ffmpeg_relay: Starting local ffmpeg relay loop.")
+        start_drone_thread() # Enabled for RTMP ingest
+    else:
+        print(f"[INFO] LIVE_MODE={LIVE_MODE}: Direct Ingress Mode.")
+        print(f"[INFO] Expecting DJI to publish to: {LIVEKIT_INGRESS_URL}")
+        print("[INFO] Local 'drone_processing_loop' (cv2) DISABLED.")
+
     socketio.run(app, host='0.0.0.0', port=8000, debug=True)
