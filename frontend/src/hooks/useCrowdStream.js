@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 
-const SOCKET_URL = 'http://localhost:5001';
+const SOCKET_URL = 'http://localhost:8000';
 
 const useCrowdStream = () => {
   const [isConnected, setIsConnected] = useState(false);

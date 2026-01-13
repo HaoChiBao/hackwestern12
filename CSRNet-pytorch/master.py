@@ -361,6 +361,6 @@ def start_drone_thread():
         drone_thread = socketio.start_background_task(drone_processing_loop)
 
 if __name__ == '__main__':
-    print("Starting Flask-SocketIO server on port 5001...")
+    print("Starting Flask-SocketIO server on port 8000...")
     # start_drone_thread() # Disabled for upload focus
-    socketio.run(app, host='0.0.0.0', port=5001, debug=True)
+    socketio.run(app, host='0.0.0.0', port=8000, debug=True)
