@@ -10,12 +10,16 @@ import os
 import uuid
 import json
 from torchvision import transforms
+import socket
+import subprocess
+import traceback
 from flask import Flask, Response, request, jsonify
 from flask_socketio import SocketIO, emit, join_room
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from services.s3 import upload_file_to_s3, create_presigned_get_url, download_s3_to_local
-from services.livekit import generate_token
+from services.s3 import upload_file_to_s3, create_presigned_get_url, download_s3_to_local
+# from services.livekit   <-- REMOVED
 
 # Patch for better async performance with Flask-SocketIO
 # eventlet.monkey_patch() # moved to top
@@ -25,9 +29,12 @@ from model import CSRNet
 # ----------------------
 # Configuration
 # ----------------------
-RTMP_URL = os.getenv('DRONE_RTMP_INPUT_URL', "rtmp://172.20.10.2:1935/live/dji")
-LIVEKIT_INGRESS_URL = os.getenv('LIVEKIT_INGRESS_RTMP_URL', "")
-LIVE_MODE = os.getenv('LIVE_MODE', 'direct_ingress') # 'direct_ingress' or 'ffmpeg_relay'
+RTMP_HOST = os.getenv('RTMP_HOST', 'localhost')
+RTMP_PORT = int(os.getenv('RTMP_PORT', 1935))
+RTMP_STREAM = os.getenv('RTMP_STREAM', 'dji')
+RTMP_URL = f"rtmp://{RTMP_HOST}:{RTMP_PORT}/{RTMP_STREAM}"
+# LIVEKIT_INGRESS_URL Removed
+LIVE_MODE = 'direct_ingress' # Simplified for local stack
 MODEL_PATH = os.getenv('MODEL_PATH', "csrnet_pretrained.pth")
 UPLOAD_FOLDER = 'uploads' # Local temp folder
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -76,6 +83,7 @@ transform = transforms.Compose([
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+# Enable CORS for all routes and all origins
 CORS(app, resources={r"/*": {"origins": "*"}})
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
@@ -157,43 +165,124 @@ def process_frame_for_heatmap(frame):
 # Background Jobs
 # ----------------------
 
+def check_tcp_connection(host, port, timeout=1.0):
+    """Check if a TCP port is open."""
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        result = sock.connect_ex((host, port))
+        sock.close()
+        return result == 0
+    except Exception:
+        return False
+
 # Drone Processing Job
 drone_thread = None
 drone_active = False
+drone_status_info = {
+    "state": "initializing",
+    "last_frame_ts": None,
+    "rtmp_url": RTMP_URL,
+    "frames_received": 0,
+    "error": None
+}
+
+def run_ffprobe_check(url):
+    """Run ffprobe to check if stream exists and log output."""
+    try:
+        cmd = ["ffprobe", "-v", "error", "-show_streams", url]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            print(f"[DEBUG] FFprobe success: {result.stdout}")
+            return True
+        else:
+            print(f"[WARN] FFprobe failed (Code {result.returncode}): {result.stderr}")
+            return False
+    except FileNotFoundError:
+        print("[WARN] ffprobe not installed. Skipping stream check.")
+        return False
+    except Exception as e:
+        print(f"[WARN] FFprobe check error: {e}")
+        return False
 
 def drone_processing_loop():
     """Background task to read RTMP and emit analytics."""
-    global drone_active
+    global drone_active, drone_status_info
     print(f"Starting Drone Processing Loop via {RTMP_URL}")
-    cap = cv2.VideoCapture(RTMP_URL)
     
-    HEATMAP_INTERVAL = 3 # Process every 3rd frame
+    # Exponential backoff parameters
+    backoff = 5
+    MAX_BACKOFF = 40
+    
+    cap = None
     frame_count = 0
+    start_time = time.time()
     
     while drone_active:
-        if not cap.isOpened():
-             print(f"[DEBUG] RTMP source {RTMP_URL} not ready/closed, re-check in 5s...")
-             socketio.sleep(5)
-             cap = cv2.VideoCapture(RTMP_URL)
+      try:
+        # 1. Check if RTMP server is reachable
+        if not check_tcp_connection(RTMP_HOST, RTMP_PORT):
+             msg = f"RTMP server not reachable at {RTMP_HOST}:{RTMP_PORT}. Waiting {backoff}s..."
+             if drone_status_info["state"] != "waiting_for_server":
+                 print(f"[WARN] {msg}")
+             
+             drone_status_info["state"] = "waiting_for_server"
+             drone_status_info["error"] = "RTMP Server Unreachable"
+             
+             socketio.sleep(backoff)
+             backoff = min(backoff * 2, MAX_BACKOFF)
              continue
+
+        # 2. Server is up, try to connect to stream
+        if cap is None or not cap.isOpened():
+             # Diagnostic: Check with ffprobe first if we failed previously
+             if drone_status_info["state"] == "connecting":
+                 run_ffprobe_check(RTMP_URL)
+
+             cap = cv2.VideoCapture(RTMP_URL)
+             if not cap.isOpened():
+                 if drone_status_info["state"] != "connecting":
+                     print(f"[DEBUG] RTMP stream {RTMP_URL} not ready yet. Retrying in {backoff}s...")
+                 
+                 drone_status_info["state"] = "connecting"
+                 drone_status_info["error"] = "Stream Not Ready"
+                 
+                 socketio.sleep(backoff)
+                 backoff = min(backoff * 2, MAX_BACKOFF)
+                 continue
+             else:
+                 print(f"[INFO] Connected to RTMP stream: {RTMP_URL}")
+                 backoff = 5 # Reset backoff on success
+                 drone_status_info["state"] = "streaming"
+                 drone_status_info["error"] = None
+                 # Attempt to read one frame to confirm
+                 success, frame = cap.read()
+                 if not success:
+                     print("[WARN] Connected but failed to read first frame.")
+                     cap.release()
+                     continue
+                 else:
+                     frame_count += 1
+                     drone_status_info["frames_received"] = frame_count
 
         success, frame = cap.read()
         if not success:
-            print("[DEBUG] Failed to read drone frame (stream invalid or empty). Retrying...") 
+            # Stream might have ended or interrupted
+            drone_status_info["state"] = "interrupted"
+            print(f"[WARN] Failed to read frame. Stream might be closed. Reconnecting...")
             cap.release()
             socketio.sleep(1)
-            cap = cv2.VideoCapture(RTMP_URL)
             continue
         
-        if frame_count == 0:
-            print(f"[DEBUG] FIRST FRAME READ SUCCESS from {RTMP_URL}")
-            print(f"[DEBUG] Frame Shape: {frame.shape}")
-
         frame_count += 1
+        drone_status_info["frames_received"] = frame_count
+        
         if frame_count % 100 == 0:
-            print(f"[DEBUG] Processed {frame_count} frames from drone stream")
+            elapsed = time.time() - start_time
+            fps = frame_count / elapsed if elapsed > 0 else 0
+            print(f"[DEBUG] Processed {frame_count} frames | FPS: {fps:.2f}")
 
-        if frame_count % HEATMAP_INTERVAL == 0:
+        if frame_count % 3 == 0: # HEATMAP_INTERVAL
             heatmap_grid, stats = process_frame_for_heatmap(frame)
             # Emit to 'drone_feed' room
             socketio.emit('analytics:update', {
@@ -203,9 +292,17 @@ def drone_processing_loop():
                 'sourceType': 'drone'
             }, room='drone_feed')
             
-        socketio.sleep(0.01) # Yield
+        # Update status
+        drone_status_info["last_frame_ts"] = time.time()
         
-    cap.release()
+        socketio.sleep(0.01) # Yield
+      except Exception as e:
+          print(f"[ERROR] Drone loop exception: {e}")
+          traceback.print_exc()
+          drone_status_info["error"] = str(e)
+          socketio.sleep(5)
+        
+    if cap: cap.release()
 
 # Uploaded Video Processing Logic
 def process_uploaded_video_job(filepath, video_id, client_id):
@@ -256,130 +353,39 @@ def process_uploaded_video_job(filepath, video_id, client_id):
 # Routes
 # ----------------------
 
-@app.route('/api/livekit/token', methods=['POST'])
-def get_livekit_token():
-    try:
-        data = request.json
-        room_name = data.get('roomName', 'default-room')
-        participant_identity = data.get('identity', f"user_{uuid.uuid4().hex[:6]}")
-        is_publisher = data.get('isPublisher', False)
-        
-        token = generate_token(room_name, participant_identity, is_publisher=is_publisher)
-        
-        return jsonify({
-            'token': token,
-            'url': os.getenv('LIVEKIT_URL'),
-            'roomName': room_name
-        })
-    except Exception as e:
-        print(f"Error generating token: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/livekit/ingress/info', methods=['GET'])
-def get_ingress_info():
+@app.route('/api/stream/info', methods=['GET'])
+def get_stream_info():
     """
-    Returns connection details for the Drone (Direct Ingress Architecture).
+    Returns connection details for Local MediaMTX stack.
     """
-    try:
-        ingress_url = os.getenv('LIVEKIT_INGRESS_RTMP_URL', '')
-        
-        # Mask the secret key for safety if possible
-        masked_url = ingress_url
-        if 'livekit.cloud' in ingress_url and '/' in ingress_url:
-            parts = ingress_url.rsplit('/', 1)
-            if len(parts) == 2:
-                base, key = parts
-                masked_key = key[:4] + '****' + key[-4:] if len(key) > 8 else '****'
-                masked_url = f"{base}/{masked_key}"
+    host = request.host.split(':')[0]
+    # For local dev, we assume standard ports
+    return jsonify({
+        "rtmp_ingest_url": f"rtmp://{host}:1935/dji",
+        "webrtc_play_url": f"http://{host}:8889/dji",
+        "room": None,
+        "notes": "Paste RTMP ingest into DJI. Open webrtc URL in browser. ensure you are on the same Wi-Fi."
+    })
 
-        return jsonify({
-            'roomName': 'default-room',
-            'identity': 'drone',
-            'publishUrl': ingress_url, # Full URL needed for DJI copy-paste
-            'maskedUrl': masked_url,
-            'instructions': 'Copy the Publish URL and paste it into your DJI "Custom RTMP" settings.'
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
-@app.route('/api/livekit/room/status', methods=['GET'])
-def get_room_status():
+@app.route('/api/stream/status', methods=['GET'])
+def get_stream_status():
+    global drone_status_info
+    return jsonify(drone_status_info)
+
+@app.route('/api/rtmp/debug', methods=['GET'])
+def get_rtmp_debug():
     """
-    Checks if the drone is currently part of the room.
+    Detailed debug info for RTMP ingest.
     """
-    try:
-        room_name = request.args.get('room', 'default-room')
-        
-        # We need to query LiveKit API
-        # Simple check: Is "drone" connected?
-        import asyncio
-        from services.livekit import get_livekit_config
-        from livekit import api
-        
-        conf = get_livekit_config()
-        if not conf['url'] or not conf['api_key']:
-             return jsonify({'error': 'LiveKit not configured'}), 500
-
-        # Create localized API instance for this status check
-        # (In prod, reuse a global instance)
-        lkapi = api.LiveKitAPI(conf['url'], conf['api_key'], os.getenv('LIVEKIT_API_SECRET'))
-        
-        async def check_participant():
-            try:
-                # List participants in the room
-                # list_participants returns a response object with 'participants' list
-                res = await lkapi.room.list_participants(api.ListParticipantsRequest(room=room_name))
-                for p in res.participants:
-                    if p.identity == 'drone':
-                        return {
-                            'connected': True,
-                            'state': str(p.state),
-                            'tracks': [t.sid for t in p.tracks]
-                        }
-                return {'connected': False}
-            finally:
-                await lkapi.aclose()
-
-        status = asyncio.run(check_participant())
-        return jsonify(status)
-        
-    except Exception as e:
-        print(f"Error checking room status: {e}")
-        return jsonify({'error': str(e), 'connected': False})
-
-@app.route('/api/livekit/ingress/create', methods=['POST'])
-def create_ingress_endpoint():
-    # 1. Security Check
-    auth_header = request.headers.get('Authorization')
-    expected_secret = os.getenv('ADMIN_DEBUG_TOKEN', 'hackwestern_debug_secret')
-    
-    # Allow Bearer token or simple direct string match
-    token = auth_header.replace('Bearer ', '') if auth_header else ''
-    
-    if token != expected_secret:
-        return jsonify({'error': 'Unauthorized'}), 401
-
-    try:
-        data = request.json or {}
-        room_name = data.get('room', 'default-room')
-        
-        # We need to run the async function from sync Flask
-        import asyncio
-        from services.livekit import create_ingress
-        
-        # Use asyncio.run()
-        info = asyncio.run(create_ingress(room_name))
-        
-        return jsonify({
-            'ingressId': info.ingress_id,
-            'url': info.url,
-            'streamKey': info.stream_key,
-            'fullPublishUrl': f"{info.url}/{info.stream_key}"
-        })
-        
-    except Exception as e:
-        print(f"Error creating ingress via API: {e}")
-        return jsonify({'error': str(e)}), 500
+    global drone_status_info
+    return jsonify({
+        "info": drone_status_info,
+        "rtmp_host": RTMP_HOST,
+        "rtmp_port": RTMP_PORT,
+        "rtmp_url": RTMP_URL,
+        "timestamp": time.time()
+    })
 
 @app.route('/api/upload', methods=['POST'])
 def upload_video():
@@ -444,6 +450,50 @@ def start_analysis():
     # Not implemented for MVP
     return jsonify({'message': 'Not implemented'}), 501
 
+@app.route('/stop_stream', methods=['POST', 'OPTIONS'])
+def stop_stream():
+    """
+    Manually handle stop stream request with explicit CORS for debugging.
+    """
+    # 1. Log request details
+    print(f"[DEBUG] /stop_stream called. Method: {request.method}, Origin: {request.headers.get('Origin')}")
+
+    # 2. Handle OPTIONS (Preflight)
+    if request.method == 'OPTIONS':
+        response = Response()
+        response.headers.add('Access-Control-Allow-Origin', request.headers.get('Origin', '*'))
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'POST,OPTIONS')
+        return response
+
+    # 3. Handle POST
+    try:
+        # Logic to stop stream if needed (currently just a stub/log)
+        print("[INFO] Stop stream requested.")
+        
+        response = jsonify({"success": True, "message": "Stream stopped"})
+        response.headers.add('Access-Control-Allow-Origin', request.headers.get('Origin', '*'))
+        return response
+    except Exception as e:
+        print(f"[ERROR] /stop_stream failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/set_source', methods=['POST', 'OPTIONS'])
+def set_source():
+    if request.method == 'OPTIONS':
+        response = Response()
+        response.headers.add('Access-Control-Allow-Origin', request.headers.get('Origin', '*'))
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'POST,OPTIONS')
+        return response
+
+    print(f"[DEBUG] /set_source called. Data: {request.json}")
+    response = jsonify({"success": True})
+    response.headers.add('Access-Control-Allow-Origin', request.headers.get('Origin', '*'))
+    return response
+
 # ----------------------
 # WebSocket Events
 # ----------------------
@@ -477,12 +527,22 @@ def start_drone_thread():
 if __name__ == '__main__':
     print(f"Starting Flask-SocketIO server on port 8000 (Mode: {LIVE_MODE})...")
     
-    if LIVE_MODE == 'ffmpeg_relay':
-        print("[INFO] LIVE_MODE=ffmpeg_relay: Starting local ffmpeg relay loop.")
-        start_drone_thread() # Enabled for RTMP ingest
-    else:
-        print(f"[INFO] LIVE_MODE={LIVE_MODE}: Direct Ingress Mode.")
-        print(f"[INFO] Expecting DJI to publish to: {LIVEKIT_INGRESS_URL}")
-        print("[INFO] Local 'drone_processing_loop' (cv2) DISABLED.")
+    print(f"[INFO] LIVE_MODE={LIVE_MODE}: Streaming Mode.")
+    print(f"[INFO] Expecting DJI to push to: {RTMP_URL}")
+    
+    # We always start the drone processing loop in local mode if we want analytics
+    # But wait, now we are feeding from MediaMTX RTMP?
+    # Yes, the drone pushes to MediaMTX. MediaMTX re-serves RTMP.
+    # So we should read from MediaMTX RTMP URL.
+    
+    # If using MediaMTX locally:
+    # Drone -> MediaMTX (1935)
+    # Backend -> MediaMTX (1935)
+    
+    # Let's ensure the RTMP_URL points to localhost if run locally
+    # It defaults to "rtmp://localhost:1935/dji" at top of file
+    
+    start_drone_thread() # Start always for Local Stack
+    print("[INFO] Drone processing loop started.")
 
-    socketio.run(app, host='0.0.0.0', port=8000, debug=True)
+    socketio.run(app, host='0.0.0.0', port=8000, debug=True, allow_unsafe_werkzeug=True)

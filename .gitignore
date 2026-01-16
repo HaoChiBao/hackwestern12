@@ -1,0 +1,25 @@
+# General
+.DS_Store
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.env
+
+# Node
+node_modules/
+dist/
+build/
+.npm/
+
+# Project Specific
+CSRNet-pytorch/uploads/
+CSRNet-pytorch/csrnet_pretrained.pth
+*.mp4
+*.mov
+*.avi
