@@ -31,12 +31,50 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
   // We use state for these to force re-renders for UI updates
   const [lkConnectionState, setLkConnectionState] = useState('disconnected'); 
   const [lkSid, setLkSid] = useState('');
-  const [lkRemoteParticipants, setLkRemoteParticipants] = useState(0);
+  // Debug State
+  const [debugParticipants, setDebugParticipants] = useState([]);
+  const [noVideoWarning, setNoVideoWarning] = useState(false);
   
   const liveKitContainerRef = useRef(null); // Where we attach video
 
   const addLog = (msg) => {
     console.log(`[CSRNet Debug] ${msg}`);
+  };
+
+  const updateDebugInfo = () => {
+      if (!roomRef.current) return;
+      const room = roomRef.current;
+      setLkConnectionState(room.state);
+      setLkSid(room.sid);
+      
+      const pList = [];
+      // Combine local (for completeness) and remote
+      // pList.push({ identity: room.localParticipant.identity + " (You)", tracks: [] }); 
+
+      room.remoteParticipants.forEach(p => {
+          const tracks = [];
+          p.trackPublications.forEach(pub => {
+              tracks.push({
+                  kind: pub.kind,
+                  source: pub.source,
+                  subscribed: pub.isSubscribed,
+                  sid: pub.trackSid,
+                  mimeType: pub.track?.mimeType // helpful for codec debugging
+              });
+          });
+          pList.push({ identity: p.identity, tracks });
+      });
+      setDebugParticipants(pList);
+      
+      // Check for Drone Video Warning
+      // Condition: Participant exists, but NO subscribed video track
+      const dronePart = Array.from(room.remoteParticipants.values()).find(p => p.identity.toLowerCase().includes('drone') || p.identity.includes('ingress'));
+      if (dronePart) {
+          const hasVideo = Array.from(dronePart.trackPublications.values()).some(pub => pub.kind === 'video' && pub.isSubscribed);
+          setNoVideoWarning(!hasVideo);
+      } else {
+          setNoVideoWarning(false);
+      }
   };
 
   // --- LIVEKIT MANAGEMENT ---
@@ -66,34 +104,23 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
   }, []);
 
   // 2. Event Listeners
-  // We bind these once. Since roomRef.current is stable after first effect, 
-  // we can use a separate effect that depends on nothing (or checks roomRef).
   useEffect(() => {
-    // Wait for room to be initialized
     if (!roomRef.current) return;
     const room = roomRef.current;
 
     const handleConnectionStateChanged = (state) => {
         addLog(`Connection State Changed: ${state}`);
-        setLkConnectionState(state);
+        updateDebugInfo();
     };
 
     const handleConnected = () => {
         addLog(`Room Event: Connected! SID: ${room.sid}`);
-        setLkSid(room.sid);
-        setLkRemoteParticipants(room.remoteParticipants.size);
-        
-        // Check for existing tracks immediately
-        room.remoteParticipants.forEach(p => {
-             // Listener/Iterating logic handled in ParticipantConnected/TrackSubscribed usually,
-             // but good to check here too.
-        });
+        updateDebugInfo();
     };
 
     const handleDisconnected = (reason) => {
         addLog(`Room Event: Disconnected (Reason: ${reason})`);
-        setLkSid('');
-        setLkRemoteParticipants(0);
+        updateDebugInfo();
         setLkConnectionState(ConnectionState.Disconnected);
         setLkToken(null);
         if (liveKitContainerRef.current) liveKitContainerRef.current.innerHTML = '';
@@ -101,16 +128,27 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
 
     const handleParticipantConnected = (participant) => {
         addLog(`Participant Connected: ${participant.identity}`);
-        setLkRemoteParticipants(room.remoteParticipants.size);
+        updateDebugInfo();
     };
 
     const handleParticipantDisconnected = (participant) => {
         addLog(`Participant Disconnected: ${participant.identity}`);
-        setLkRemoteParticipants(room.remoteParticipants.size);
+        updateDebugInfo();
+    };
+
+    const handleTrackPublished = (publication, participant) => {
+        addLog(`Track Published: ${publication.kind} (${publication.source}) from ${participant.identity}`);
+        updateDebugInfo();
+    };
+    
+    const handleTrackUnpublished = (publication, participant) => {
+        addLog(`Track Unpublished: ${publication.kind} from ${participant.identity}`);
+        updateDebugInfo();
     };
 
     const handleTrackSubscribed = (track, publication, participant) => {
-        addLog(`Track Subscribed: ${track.kind} (${participant.identity})`);
+        addLog(`Track Subscribed: ${track.kind} (${participant.identity}) Source: ${publication.source}`);
+        updateDebugInfo();
         if (track.kind === 'video') {
             attachVideoTrack(track);
         }
@@ -118,6 +156,7 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
 
     const handleTrackUnsubscribed = (track, publication, participant) => {
         addLog(`Track Unsubscribed: ${track.kind}`);
+        updateDebugInfo();
         if (track.kind === 'video') {
             track.detach();
             if (liveKitContainerRef.current) {
@@ -126,13 +165,20 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
         }
     };
 
+    const handleTrackSubscriptionFailed = (trackSid, participant) => {
+        addLog(`Track Subscription Failed: ${trackSid} (${participant.identity})`);
+    };
+
     room.on(RoomEvent.ConnectionStateChanged, handleConnectionStateChanged);
     room.on(RoomEvent.Connected, handleConnected);
     room.on(RoomEvent.Disconnected, handleDisconnected);
     room.on(RoomEvent.ParticipantConnected, handleParticipantConnected);
     room.on(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
+    room.on(RoomEvent.TrackPublished, handleTrackPublished);
+    room.on(RoomEvent.TrackUnpublished, handleTrackUnpublished);
     room.on(RoomEvent.TrackSubscribed, handleTrackSubscribed);
     room.on(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
+    room.on(RoomEvent.TrackSubscriptionFailed, handleTrackSubscriptionFailed);
 
     return () => {
         room.off(RoomEvent.ConnectionStateChanged, handleConnectionStateChanged);
@@ -140,8 +186,11 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
         room.off(RoomEvent.Disconnected, handleDisconnected);
         room.off(RoomEvent.ParticipantConnected, handleParticipantConnected);
         room.off(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
+        room.off(RoomEvent.TrackPublished, handleTrackPublished);
+        room.off(RoomEvent.TrackUnpublished, handleTrackUnpublished);
         room.off(RoomEvent.TrackSubscribed, handleTrackSubscribed);
         room.off(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
+        room.off(RoomEvent.TrackSubscriptionFailed, handleTrackSubscriptionFailed);
     };
   }, []);
 
@@ -200,7 +249,29 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
                 addLog(`Room State: ${room.state}`);
                 
                 setLkSid(room.sid);
-                setLkRemoteParticipants(room.remoteParticipants.size);
+                updateDebugInfo();
+                
+                // Start Periodic Logger
+                const interval = setInterval(() => {
+                    if (roomRef.current && roomRef.current.state === ConnectionState.Connected) {
+                        const room = roomRef.current;
+                        console.groupCollapsed(`[CSRNet Heartbeat] ${new Date().toLocaleTimeString()}`);
+                        console.log("Room State:", room.state);
+                        console.log("Room SID:", room.sid);
+                        console.log("Remote Participants:", room.remoteParticipants.size);
+                        room.remoteParticipants.forEach(p => {
+                            console.log(`- Participant: ${p.identity}`);
+                            p.trackPublications.forEach(pub => {
+                                console.log(`  - Track: ${pub.kind} (${pub.source}) Subscribed: ${pub.isSubscribed}`);
+                            });
+                        });
+                        if (room.remoteParticipants.size === 0) {
+                            console.warn("No remote participants. Drone is not connected.");
+                        }
+                        console.groupEnd();
+                    }
+                }, 5000);
+                // Cleanup interval on room disconnect (not implemented fully here but safe enough for debug)
                 
                 // Handle already-published tracks
                 if (room.remoteParticipants.size > 0) {
@@ -642,25 +713,41 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
                    {/* Live Indicator Over Video */}
                    <div style={{
                         position: 'absolute', top: '1rem', left: '1rem',
-                        background: 'rgba(0,0,0,0.6)', color: 'white',
+                        background: 'rgba(0,0,0,0.8)', color: 'white',
                         padding: '0.5rem 0.75rem', borderRadius: '4px',
                         fontSize: '0.8rem', fontWeight: 700, zIndex: 10,
-                        display: 'flex', flexDirection: 'column', gap: '2px', pointerEvents: 'none'
+                        display: 'flex', flexDirection: 'column', gap: '4px', pointerEvents: 'none',
+                        maxWidth: '300px'
                     }}>
                         <div style={{display:'flex', alignItems:'center', gap:'0.5rem'}}>
-                            <div style={{ width: '8px', height: '8px', background: lkRemoteParticipants > 0 ? '#10b981' : '#f59e0b', borderRadius: '50%' }} />
+                            <div style={{ width: '8px', height: '8px', background: lkConnectionState === 'connected' ? '#10b981' : '#f59e0b', borderRadius: '50%' }} />
                             <span>{lkConnectionState === ConnectionState.Connected ? 'CONNECTED' : lkConnectionState.toUpperCase()}</span>
                         </div>
                         <div style={{ fontSize: '0.7rem', opacity: 0.8, fontFamily: 'monospace' }}>
                             SID: {lkSid ? lkSid.substring(0,12) : '---'}
                         </div>
-                        <div style={{ fontSize: '0.7rem', opacity: 0.8 }}>
-                            Remotes: {lkRemoteParticipants}
-                        </div>
                    </div>
                    
-                   {/* Center Status if waiting */}
-                   {lkConnectionState === ConnectionState.Connected && lkRemoteParticipants === 0 && (
+                   {/* Missing Video Warning */}
+                   {noVideoWarning && (
+                       <div style={{
+                           position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+                           background: 'rgba(0,0,0,0.8)', border: '1px solid #ef4444', 
+                           color: '#ef4444', padding: '2rem', borderRadius: '8px',
+                           textAlign: 'center', maxWidth: '400px'
+                       }}>
+                           <AlertTriangle size={48} style={{ marginBottom: '1rem' }} />
+                           <h3 style={{ fontSize: '1.2rem', marginBottom: '0.5rem' }}>Drone Connected, But No Video</h3>
+                           <p style={{ fontSize: '0.9rem', color: 'white' }}>
+                               We see the drone, but it is not publishing video that we can read. <br/><br/>
+                               <strong>Possible Cause:</strong> Codec mismatch (H.265).<br/>
+                               Switch your drone to <strong>H.264</strong>.
+                           </p>
+                       </div>
+                   )}
+                   
+                   {/* Center Status if completely empty */}
+                   {lkConnectionState === ConnectionState.Connected && debugParticipants.length === 0 && (
                        <div style={{
                            position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
                            color: 'rgba(255,255,255,0.7)', textAlign: 'center'
