@@ -1,0 +1,15 @@
+services:
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: mediamtx
+    ports:
+      - "1935:1935" # RTMP
+      - "8889:8889" # WebRTC
+      - "8888:8888" # HLS/API
+      - "8554:8554" # RTSP (Optional, but good default)
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml
+    restart: unless-stopped
+
+  # Optional connection to backend if we want to run it in docker later
+  # For now, we assume backend runs locally or via a separate process script

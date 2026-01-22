@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react'
 import './App.css'
 import logo from './assets/logo.png'
 import droneBg from './assets/drone_bg.png'
+import AboutUs from './components/AboutUs'
+import TechnologySection from './components/TechnologySection'
+import HowItWorksSection from './components/HowItWorksSection'
 
 function App() {
   const [activeTab, setActiveTab] = useState('Crowd Monitoring')
@@ -103,8 +106,10 @@ function App() {
           <span>Aerotir</span>
         </div>
         <nav className="nav">
+          <a href="#about-us" className="nav-link">About</a>
           <a href="#CrowdWatch" className="nav-link">Products</a>
-          <a href="mailto:nathan.wan23@gmail.com" className="nav-link">Contact</a>
+          <a href="#technology" className="nav-link">Technology</a>
+          <a href="mailto:aerotirai@gmail.com" className="nav-link">Contact</a>
           <a 
             href="https://cal.com/james-yang-ukxevk/30min" 
             target="_blank" 
@@ -137,6 +142,8 @@ function App() {
             </a>
           </div>
         </section>
+
+        <AboutUs />
 
         <section id="CrowdWatch" className="features">
           <h2 className="section-title">CrowdWatch:</h2>
@@ -185,6 +192,10 @@ function App() {
             </div>
           </div>
         </section>
+
+        <TechnologySection />
+
+        <HowItWorksSection />
       </main>
 
       <footer className="footer">
@@ -198,12 +209,12 @@ function App() {
              <div className="footer-column">
                <h4>Product</h4>
                <a href="#CrowdWatch">Features</a>
-               <a href="#">Security</a>
-               <a href="#">Enterprise</a>
+               <a href="#technology">Infrastructure</a>
+               <a href="#how-it-works">Pipeline</a>
              </div>
              <div className="footer-column">
                <h4>Company</h4>
-               <a href="#">About Us</a>
+               <a href="#about-us">About Us</a>
                <a href="#">Careers</a>
                <a href="#">Contact</a>
              </div>

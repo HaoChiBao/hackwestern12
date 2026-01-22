@@ -1,0 +1,18 @@
+paths:
+  # 'all' matches any path that doesn't match another entry.
+  all:
+    # Allow anyone to publish/read
+    source: publisher
+
+rtmp: yes
+rtmpAddress: :1935
+
+hls: yes
+hlsAddress: :8888
+
+webrtc: yes
+webrtcAddress: :8889
+# Allow CORS for WebRTC from any origin
+webrtcAllowOrigin: "*" 
+# Add ICE servers to help with connectivity
+

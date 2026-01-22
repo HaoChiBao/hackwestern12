@@ -1,0 +1,16 @@
+flask
+flask-socketio
+flask-cors
+eventlet
+boto3
+livekit-api
+python-dotenv
+opencv-python-headless
+numpy
+torch
+torchvision
+werkzeug
+# mnest
+python-engineio
+python-socketio
+# opencv-python
