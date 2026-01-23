@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Activity, Users, AlertTriangle, MapPin } from 'lucide-react';
-import '@livekit/components-styles';
-import { Room, RoomEvent, VideoPresets, ConnectionState } from 'livekit-client';
+import { Activity, Users, AlertTriangle, MapPin, ExternalLink } from 'lucide-react';
+// import '@livekit/components-styles';  <-- REMOVED
+// import { Room, RoomEvent, VideoPresets, ConnectionState } from 'livekit-client'; <-- REMOVED
 
 const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAlert, highlightedPinId, heatmapGrid, isConnected, sendFrame, joinRoom, updatePlaybackTime }) => {
   const [showHeatmap, setShowHeatmap] = useState(true);
@@ -24,282 +24,21 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
   const [websocketRoom, setWebsocketRoom] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   
-  // LIVEKIT STATE
-  const [lkToken, setLkToken] = useState(null);
-  const [ingressInfo, setIngressInfo] = useState(null); 
-  const roomRef = useRef(null); // Explicit Room Instance
-  // We use state for these to force re-renders for UI updates
-  const [lkConnectionState, setLkConnectionState] = useState('disconnected'); 
-  const [lkSid, setLkSid] = useState('');
-  // Debug State
-  const [debugParticipants, setDebugParticipants] = useState([]);
-  const [noVideoWarning, setNoVideoWarning] = useState(false);
+  // STREAMING STATE
+  const [streamInfo, setStreamInfo] = useState(null);
   
-  const liveKitContainerRef = useRef(null); // Where we attach video
+  // Fetch stream info on mount
+  useEffect(() => {
+    const protocol = window.location.protocol;
+    const host = window.location.hostname;
+    fetch(`${protocol}//${host}:8000/api/stream/info`)
+      .then(res => res.json())
+      .then(data => setStreamInfo(data))
+      .catch(err => console.error("Failed to fetch stream info", err));
+  }, []);
 
   const addLog = (msg) => {
     console.log(`[CSRNet Debug] ${msg}`);
-  };
-
-  const updateDebugInfo = () => {
-      if (!roomRef.current) return;
-      const room = roomRef.current;
-      setLkConnectionState(room.state);
-      setLkSid(room.sid);
-      
-      const pList = [];
-      // Combine local (for completeness) and remote
-      // pList.push({ identity: room.localParticipant.identity + " (You)", tracks: [] }); 
-
-      room.remoteParticipants.forEach(p => {
-          const tracks = [];
-          p.trackPublications.forEach(pub => {
-              tracks.push({
-                  kind: pub.kind,
-                  source: pub.source,
-                  subscribed: pub.isSubscribed,
-                  sid: pub.trackSid,
-                  mimeType: pub.track?.mimeType // helpful for codec debugging
-              });
-          });
-          pList.push({ identity: p.identity, tracks });
-      });
-      setDebugParticipants(pList);
-      
-      // Check for Drone Video Warning
-      // Condition: Participant exists, but NO subscribed video track
-      const dronePart = Array.from(room.remoteParticipants.values()).find(p => p.identity.toLowerCase().includes('drone') || p.identity.includes('ingress'));
-      if (dronePart) {
-          const hasVideo = Array.from(dronePart.trackPublications.values()).some(pub => pub.kind === 'video' && pub.isSubscribed);
-          setNoVideoWarning(!hasVideo);
-      } else {
-          setNoVideoWarning(false);
-      }
-  };
-
-  // --- LIVEKIT MANAGEMENT ---
-
-  // 1. Initialize Room once on mount
-  useEffect(() => {
-    if (roomRef.current) return; // Only init once
-
-    addLog("Initializing LiveKit Room instance...");
-    const room = new Room({
-        adaptiveStream: true,
-        dynacast: true,
-        videoCaptureDefaults: {
-            resolution: VideoPresets.h720.resolution,
-        },
-    });
-    roomRef.current = room;
-
-    // cleanup on unmount
-    return () => {
-        addLog("Cleaning up LiveKit Room...");
-        if (roomRef.current) {
-            roomRef.current.disconnect();
-            roomRef.current = null;
-        }
-    };
-  }, []);
-
-  // 2. Event Listeners
-  useEffect(() => {
-    if (!roomRef.current) return;
-    const room = roomRef.current;
-
-    const handleConnectionStateChanged = (state) => {
-        addLog(`Connection State Changed: ${state}`);
-        updateDebugInfo();
-    };
-
-    const handleConnected = () => {
-        addLog(`Room Event: Connected! SID: ${room.sid}`);
-        updateDebugInfo();
-    };
-
-    const handleDisconnected = (reason) => {
-        addLog(`Room Event: Disconnected (Reason: ${reason})`);
-        updateDebugInfo();
-        setLkConnectionState(ConnectionState.Disconnected);
-        setLkToken(null);
-        if (liveKitContainerRef.current) liveKitContainerRef.current.innerHTML = '';
-    };
-
-    const handleParticipantConnected = (participant) => {
-        addLog(`Participant Connected: ${participant.identity}`);
-        updateDebugInfo();
-    };
-
-    const handleParticipantDisconnected = (participant) => {
-        addLog(`Participant Disconnected: ${participant.identity}`);
-        updateDebugInfo();
-    };
-
-    const handleTrackPublished = (publication, participant) => {
-        addLog(`Track Published: ${publication.kind} (${publication.source}) from ${participant.identity}`);
-        updateDebugInfo();
-    };
-    
-    const handleTrackUnpublished = (publication, participant) => {
-        addLog(`Track Unpublished: ${publication.kind} from ${participant.identity}`);
-        updateDebugInfo();
-    };
-
-    const handleTrackSubscribed = (track, publication, participant) => {
-        addLog(`Track Subscribed: ${track.kind} (${participant.identity}) Source: ${publication.source}`);
-        updateDebugInfo();
-        if (track.kind === 'video') {
-            attachVideoTrack(track);
-        }
-    };
-
-    const handleTrackUnsubscribed = (track, publication, participant) => {
-        addLog(`Track Unsubscribed: ${track.kind}`);
-        updateDebugInfo();
-        if (track.kind === 'video') {
-            track.detach();
-            if (liveKitContainerRef.current) {
-                liveKitContainerRef.current.innerHTML = ''; 
-            }
-        }
-    };
-
-    const handleTrackSubscriptionFailed = (trackSid, participant) => {
-        addLog(`Track Subscription Failed: ${trackSid} (${participant.identity})`);
-    };
-
-    room.on(RoomEvent.ConnectionStateChanged, handleConnectionStateChanged);
-    room.on(RoomEvent.Connected, handleConnected);
-    room.on(RoomEvent.Disconnected, handleDisconnected);
-    room.on(RoomEvent.ParticipantConnected, handleParticipantConnected);
-    room.on(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
-    room.on(RoomEvent.TrackPublished, handleTrackPublished);
-    room.on(RoomEvent.TrackUnpublished, handleTrackUnpublished);
-    room.on(RoomEvent.TrackSubscribed, handleTrackSubscribed);
-    room.on(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
-    room.on(RoomEvent.TrackSubscriptionFailed, handleTrackSubscriptionFailed);
-
-    return () => {
-        room.off(RoomEvent.ConnectionStateChanged, handleConnectionStateChanged);
-        room.off(RoomEvent.Connected, handleConnected);
-        room.off(RoomEvent.Disconnected, handleDisconnected);
-        room.off(RoomEvent.ParticipantConnected, handleParticipantConnected);
-        room.off(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
-        room.off(RoomEvent.TrackPublished, handleTrackPublished);
-        room.off(RoomEvent.TrackUnpublished, handleTrackUnpublished);
-        room.off(RoomEvent.TrackSubscribed, handleTrackSubscribed);
-        room.off(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
-        room.off(RoomEvent.TrackSubscriptionFailed, handleTrackSubscriptionFailed);
-    };
-  }, []);
-
-  const attachVideoTrack = (track) => {
-      if (!liveKitContainerRef.current) return;
-      addLog("Attaching video element to DOM...");
-      liveKitContainerRef.current.innerHTML = ''; 
-      const el = track.attach();
-      el.style.width = '100%';
-      el.style.height = '100%';
-      el.style.objectFit = 'contain';
-      liveKitContainerRef.current.appendChild(el);
-  };
-
-  // 3. Connect Action
-  const handleConnectDrone = async () => {
-    if (!ingressInfo) return;
-    const room = roomRef.current;
-    if (!room) return;
-    
-    // Prevent double connect
-    if (room.state === ConnectionState.Connected || room.state === ConnectionState.Connecting) {
-        addLog(`Ignoring connect request. Current state: ${room.state}`);
-        return;
-    }
-
-    addLog("Fetching Token...");
-    try {
-        const res = await fetch('http://localhost:8000/api/livekit/token', {
-           method: 'POST',
-           headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify({ 
-             roomName: ingressInfo.roomName,
-             identity: `viewer_${Math.random().toString(36).substr(2, 5)}`
-           })
-        });
-        const data = await res.json();
-        
-        if (data.token) {
-            setLkToken(data.token);
-            addLog(`Got Token. Calling room.connect(${data.url})...`);
-            
-            try {
-                // Connect with timeout guard
-                const connectPromise = room.connect(data.url, data.token);
-                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 10000));
-                
-                await Promise.race([connectPromise, timeoutPromise]);
-                
-                // --- SUCCESS ---
-                addLog("Connect Await Resolved.");
-                addLog(`Room Name: ${room.name}`);
-                addLog(`Room SID: ${room.sid}`);
-                addLog(`Local Identity: ${room.localParticipant.identity}`);
-                addLog(`Remote Participants: ${room.remoteParticipants.size}`);
-                addLog(`Room State: ${room.state}`);
-                
-                setLkSid(room.sid);
-                updateDebugInfo();
-                
-                // Start Periodic Logger
-                const interval = setInterval(() => {
-                    if (roomRef.current && roomRef.current.state === ConnectionState.Connected) {
-                        const room = roomRef.current;
-                        console.groupCollapsed(`[CSRNet Heartbeat] ${new Date().toLocaleTimeString()}`);
-                        console.log("Room State:", room.state);
-                        console.log("Room SID:", room.sid);
-                        console.log("Remote Participants:", room.remoteParticipants.size);
-                        room.remoteParticipants.forEach(p => {
-                            console.log(`- Participant: ${p.identity}`);
-                            p.trackPublications.forEach(pub => {
-                                console.log(`  - Track: ${pub.kind} (${pub.source}) Subscribed: ${pub.isSubscribed}`);
-                            });
-                        });
-                        if (room.remoteParticipants.size === 0) {
-                            console.warn("No remote participants. Drone is not connected.");
-                        }
-                        console.groupEnd();
-                    }
-                }, 5000);
-                // Cleanup interval on room disconnect (not implemented fully here but safe enough for debug)
-                
-                // Handle already-published tracks
-                if (room.remoteParticipants.size > 0) {
-                     addLog("Checking existing participants for tracks...");
-                     room.remoteParticipants.forEach(p => {
-                         addLog(`Participant ${p.identity}: ${p.trackPublications.size} tracks`);
-                         p.trackPublications.forEach(pub => {
-                             if (pub.track?.kind === 'video') {
-                                 addLog(`Found existing video track from ${p.identity}`);
-                                 attachVideoTrack(pub.track);
-                             }
-                         });
-                     });
-                }
-                
-            } catch (connErr) {
-                addLog(`Room Connection Failed: ${connErr.message}`);
-                alert(`Connection failed: ${connErr.message}`);
-            }
-
-        } else {
-            addLog("Failed to get token");
-            alert("Token fetch failed");
-        }
-    } catch (e) {
-        addLog(`API Error: ${e.message}`);
-        console.error(e);
-    }
   };
 
   
@@ -313,13 +52,10 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
     // Cleanup first
     try {
       stopWebcam();
-      // Disconnect LiveKit if active
-      if (roomRef.current && roomRef.current.state !== ConnectionState.Disconnected) {
-          addLog("Disconnecting active room...");
-          await roomRef.current.disconnect();
-      }
-      
-      await fetch('http://localhost:8000/stop_stream', {
+      // Stop backend stream if needed
+      const protocol = window.location.protocol;
+      const host = window.location.hostname;
+      await fetch(`${protocol}//${host}:8000/stop_stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       }).catch(e => console.log('Stop stream error (safe to ignore):', e.message));
@@ -333,18 +69,16 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
 
     if (mode === 'webcam') {
       await startWebcam();
-      fetch('http://localhost:8000/set_source', {
+      const protocol = window.location.protocol;
+      const host = window.location.hostname;
+      fetch(`${protocol}//${host}:8000/set_source`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ source: 'webcam' })
       }).catch(e => {});
 
     } else if (mode === 'drone') {
-        // Fetch Details for Manual Connection UI
-        try {
-            const res = await fetch('http://localhost:8000/api/livekit/ingress/info');
-            const data = await res.json();
-            if (!data.error) setIngressInfo(data);
-        } catch (e) { console.error(e); }
+        // Nothing special to init, just switch view
+        console.log("Switched to drone mode");
     } else if (mode === 'upload') {
       fileInputRef.current.click();
     }
@@ -378,7 +112,10 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
             } else { reject(new Error('Upload failed')); }
           });
           xhr.addEventListener('error', (e) => reject(new Error('Upload failed')));
-          xhr.open('POST', 'http://localhost:8000/api/upload');
+          
+          const protocol = window.location.protocol;
+          const host = window.location.hostname;
+          xhr.open('POST', `${protocol}//${host}:8000/api/upload`);
           xhr.send(formData);
         });
         
@@ -475,7 +212,9 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
         setUploadProgress(0);
         // Simplified generic fetch for brevity
         try {
-             const res = await fetch('http://localhost:8000/api/upload', { method: 'POST', body: formData });
+             const protocol = window.location.protocol;
+             const host = window.location.hostname;
+             const res = await fetch(`${protocol}//${host}:8000/api/upload`, { method: 'POST', body: formData });
              const data = await res.json();
              if (data.success) {
                 setSourceMode('upload');
@@ -665,98 +404,66 @@ const CrowdLiveView = ({ globalStats, pins, setPins, onPinStatsUpdate, onPinAler
             }}
         />
 
-        {/* DRONE / LIVEKIT RENDERER */}
+        {/* DRONE / MEDIAMTX RENDERER */}
         <div style={{ 
             width: '100%', height: '100%', 
             display: sourceMode === 'drone' ? 'block' : 'none',
             position: 'relative'
         }}>
-           {/* If not connected, show Setup UI */}
-           {lkConnectionState === ConnectionState.Disconnected ? (
-               <div style={{
-                   width: '100%', height: '100%',
-                   display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                   background: 'linear-gradient(to bottom right, #1f2937, #111827)',
-                   color: 'white', padding: '2rem', textAlign: 'center'
-               }}>
-                   <h3 style={{ fontSize: '1.5rem', fontWeight: 600, marginBottom: '1.5rem' }}>Drone Stream Setup</h3>
+           {streamInfo ? (
+               <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                   {/* Player */}
+                   <iframe 
+                        src={streamInfo.webrtc_play_url} 
+                        style={{ flex: 1, border: 'none', background: 'black' }}
+                        allow="autoplay; fullscreen"
+                        title="Drone Steam"
+                   />
                    
-                   {ingressInfo ? (
-                       <div style={{ background: 'rgba(0,0,0,0.3)', padding: '1.5rem', borderRadius: '8px', maxWidth: '500px' }}>
-                           <div style={{ marginBottom: '1rem', textAlign: 'left' }}>
-                               <label style={{ fontSize: '0.8rem', color: '#9ca3af' }}>RTMP Publish URL (For DJI)</label>
-                               <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-                                    <input readOnly value={ingressInfo.publishUrl} 
-                                        style={{ background: '#374151', border: 'none', padding: '0.5rem', borderRadius: '4px', flex: 1, color: 'white', fontFamily: 'monospace' }} />
-                                    <button onClick={() => { navigator.clipboard.writeText(ingressInfo.publishUrl); alert("Copied!"); }}
-                                        className="btn" style={{ padding: '0.5rem 1rem' }}>Copy</button>
-                               </div>
+                   {/* Stream Info Overlay Controls */}
+                   <div style={{
+                       position: 'absolute', top: '1rem', left: '1rem',
+                       background: 'rgba(0,0,0,0.8)', padding: '1rem', borderRadius: '8px',
+                       color: 'white', maxWidth: '400px', fontSize: '0.85rem'
+                   }}>
+                       <div style={{ fontWeight: 'bold', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                           <div style={{ width: 8, height: 8, background: '#10b981', borderRadius: '50%' }}></div>
+                           Local Drone Stream
+                       </div>
+                       
+                       <div style={{ marginBottom: '0.5rem' }}>
+                           <label style={{ color: '#9ca3af', display: 'block', marginBottom: '2px' }}>RTMP Ingest (For Drone)</label>
+                           <div style={{ display: 'flex', gap: '0.5rem' }}>
+                               <code style={{ background: '#374151', padding: '2px 6px', borderRadius: '4px', flex: 1, fontSize: '0.75rem' }}>
+                                   {streamInfo.rtmp_ingest_url}
+                               </code>
+                                <button onClick={() => { 
+                                   if (navigator.clipboard && window.isSecureContext) {
+                                       navigator.clipboard.writeText(streamInfo.rtmp_ingest_url); 
+                                       alert("Copied!"); 
+                                   } else {
+                                       alert("Copy not supported over HTTP. Please copy manually.");
+                                   }
+                                }}
+                                   style={{ background: '#2563eb', border: 'none', color: 'white', padding: '2px 8px', borderRadius: '4px', cursor: 'pointer' }}>
+                                   Copy
+                               </button>
                            </div>
-                           
-                           <button onClick={handleConnectDrone} className="btn btn-primary"
-                             style={{ width: '100%', padding: '0.75rem', fontWeight: 600, marginTop: '1rem', background: 'linear-gradient(90deg, #3b82f6, #2563eb)' }}>
-                               Connect to Stream
-                           </button>
                        </div>
-                   ) : (
-                       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center' }}>
-                           <Activity className="animate-spin" size={32} />
-                           <p>Loading Ingress Info...</p>
-                       </div>
-                   )}
+                       
+                       <p style={{ margin: 0, opacity: 0.7, fontSize: '0.75rem' }}>
+                           {streamInfo.notes}
+                       </p>
+                   </div>
                </div>
            ) : (
-               /* Connected - Video Container */
-               <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-                   <div ref={liveKitContainerRef} style={{ width: '100%', height: '100%', background: 'black' }} />
-                   
-                   {/* Live Indicator Over Video */}
-                   <div style={{
-                        position: 'absolute', top: '1rem', left: '1rem',
-                        background: 'rgba(0,0,0,0.8)', color: 'white',
-                        padding: '0.5rem 0.75rem', borderRadius: '4px',
-                        fontSize: '0.8rem', fontWeight: 700, zIndex: 10,
-                        display: 'flex', flexDirection: 'column', gap: '4px', pointerEvents: 'none',
-                        maxWidth: '300px'
-                    }}>
-                        <div style={{display:'flex', alignItems:'center', gap:'0.5rem'}}>
-                            <div style={{ width: '8px', height: '8px', background: lkConnectionState === 'connected' ? '#10b981' : '#f59e0b', borderRadius: '50%' }} />
-                            <span>{lkConnectionState === ConnectionState.Connected ? 'CONNECTED' : lkConnectionState.toUpperCase()}</span>
-                        </div>
-                        <div style={{ fontSize: '0.7rem', opacity: 0.8, fontFamily: 'monospace' }}>
-                            SID: {lkSid ? lkSid.substring(0,12) : '---'}
-                        </div>
-                   </div>
-                   
-                   {/* Missing Video Warning */}
-                   {noVideoWarning && (
-                       <div style={{
-                           position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-                           background: 'rgba(0,0,0,0.8)', border: '1px solid #ef4444', 
-                           color: '#ef4444', padding: '2rem', borderRadius: '8px',
-                           textAlign: 'center', maxWidth: '400px'
-                       }}>
-                           <AlertTriangle size={48} style={{ marginBottom: '1rem' }} />
-                           <h3 style={{ fontSize: '1.2rem', marginBottom: '0.5rem' }}>Drone Connected, But No Video</h3>
-                           <p style={{ fontSize: '0.9rem', color: 'white' }}>
-                               We see the drone, but it is not publishing video that we can read. <br/><br/>
-                               <strong>Possible Cause:</strong> Codec mismatch (H.265).<br/>
-                               Switch your drone to <strong>H.264</strong>.
-                           </p>
-                       </div>
-                   )}
-                   
-                   {/* Center Status if completely empty */}
-                   {lkConnectionState === ConnectionState.Connected && debugParticipants.length === 0 && (
-                       <div style={{
-                           position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-                           color: 'rgba(255,255,255,0.7)', textAlign: 'center'
-                       }}>
-                           <Activity size={48} className="animate-pulse" style={{ margin: '0 auto 1rem' }} />
-                           <h3 style={{ fontSize: '1.2rem', marginBottom: '0.5rem' }}>Waiting for Drone Stream...</h3>
-                           <p style={{ fontSize: '0.9rem', opacity: 0.7 }}>Ensure the drone is streaming to the correct RTMP URL.</p>
-                       </div>
-                   )}
+               <div style={{
+                   width: '100%', height: '100%',
+                   display: 'flex', alignItems: 'center', justifyContent: 'center',
+                   color: 'white'
+               }}>
+                   <Activity className="animate-spin" size={32} />
+                   <p style={{ marginLeft: '1rem' }}>Loading Stream Info...</p>
                </div>
            )}
         </div>
