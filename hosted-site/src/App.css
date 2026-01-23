@@ -639,6 +639,22 @@ html {
     overflow: hidden;
 }
 
+.how-image-container {
+    width: 100%;
+    height: 520px; /* Tall 'giant image' */
+    background: #f0f0f0; 
+    border-radius: 4px;
+    position: relative;
+    overflow: hidden;
+}
+
+.how-image {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
 .placeholder-text {
     color: #999;
     font-size: 0.9rem;
@@ -662,7 +678,8 @@ html {
         gap: 3rem;
     }
     
-    .how-image-placeholder {
+    .how-image-placeholder,
+    .how-image-container {
         height: 420px; /* Slightly shorter on mobile but still hero-like */
     }
 }
