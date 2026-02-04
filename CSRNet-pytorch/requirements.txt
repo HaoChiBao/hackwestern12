@@ -14,3 +14,5 @@ werkzeug
 python-engineio
 python-socketio
 # opencv-python
+
+modal
